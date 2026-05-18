@@ -1,6 +1,5 @@
 #define PLAYER_IMPLEMENTATION
 #define STATE_IMPLEMENTATION
-#define PLAY_STATE_IMPLEMENTATION
 #define RENDERER_IMPLEMENTATION
 #define CHARACTERS_IMPLEMENTATION
 #define FAJTER_IMPLEMENTATION
@@ -11,13 +10,13 @@
 #include "match.h"
 #include "game.h"
 
-#include <utils/loging.h>
-#include <utils/macros.h>
+#include "loging.h"
+#include "macros.h"
 #include <SDL2/SDL_image.h>
 
-#define INIT_FLAGS      (SDL_INIT_VIDEO | SDL_INIT_TIMER  | SDL_INIT_EVENTS)
-#define WIN_FLAGS       (SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE /*| SDL_WINDOW_FULLSCREEN_DESKTOP*/)
-#define IMAGE_FLAGS     (IMG_INIT_JPG | IMG_INIT_PNG)
+#define INIT_FLAGS  (SDL_INIT_VIDEO | SDL_INIT_TIMER  | SDL_INIT_EVENTS)
+#define WIN_FLAGS   (SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE /*| SDL_WINDOW_FULLSCREEN_DESKTOP*/)
+#define IMAGE_FLAGS (IMG_INIT_JPG | IMG_INIT_PNG)
 
 bool init_game(game_t *game)
 {
@@ -142,7 +141,7 @@ void handle_SDL_events(game_t *game)
             {
                 if (!event.key.repeat) 
                 {
-                    game->input.keys[event.key.keysym.scancode].holding    = true;
+                    game->input.keys[event.key.keysym.scancode].holding = true;
                     game->input.keys[event.key.keysym.scancode].pressed = true;
                 }
             } break;
@@ -158,7 +157,7 @@ void handle_SDL_events(game_t *game)
                         SDL_SetWindowFullscreen(game->window, SDL_WINDOW_FULLSCREEN_DESKTOP);
                 }
 
-                game->input.keys[event.key.keysym.scancode].holding     = false;
+                game->input.keys[event.key.keysym.scancode].holding  = false;
                 game->input.keys[event.key.keysym.scancode].released = true;
             } break;
 
@@ -174,7 +173,7 @@ void handle_SDL_events(game_t *game)
                 if (game->input.mouse.is_active) 
                 {
                     mouse_button_t button = event.button.button - 1;
-                    game->input.mouse.buttons[button].holding    = true;
+                    game->input.mouse.buttons[button].holding = true;
                     game->input.mouse.buttons[button].pressed = true;
                 }
                 break;
@@ -183,7 +182,7 @@ void handle_SDL_events(game_t *game)
                 if (game->input.mouse.is_active) 
                 {
                     mouse_button_t button = event.button.button - 1;
-                    game->input.mouse.buttons[button].holding     = false;
+                    game->input.mouse.buttons[button].holding  = false;
                     game->input.mouse.buttons[button].released = true;
                 }
                 break;

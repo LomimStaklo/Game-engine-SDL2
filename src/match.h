@@ -104,6 +104,12 @@ static void match_enforce_rules(player_t *p1, player_t *p2, bool record_input, f
             : 0.5f;
         float f2_pushed = 1.0f - f1_pushed;
 
+        bool p1_walled = (p1->fighter.position_x <= 10.0f || p1->fighter.position_x >= SCREEN_WIDTH - 10);
+        bool p2_walled = (p2->fighter.position_x <= 10.0f || p2->fighter.position_x >= SCREEN_WIDTH - 10);
+    
+        if (p1_walled)      { f1_pushed = 0.0f; f2_pushed = 1.0f; }
+        else if (p2_walled) { f1_pushed = 1.0f; f2_pushed = 0.0f; }
+
         p1->fighter.position_x +=  (dir * overlap * f1_pushed);
         p2->fighter.position_x += -(dir * overlap * f2_pushed);
     }
@@ -236,20 +242,15 @@ void match_update(match_t *match, float delta_time)
     }
 } 
 
-void draw_dbg_boxes(renderer_t *r, fighter_t *f, SDL_Color c);
+static void draw_dbg_boxes(renderer_t *r, fighter_t *f, SDL_Color c);
+static void draw_ui_overlay(const match_t *match, renderer_t *renderer);
 
 void match_render(const match_t *match, renderer_t *renderer)
 {
     player_t *p1 = match->p1; 
     player_t *p2 = match->p2; 
 
-    static texture_handle_t bg = 0, bar = 0;
-
-    if (!bg)  bg = renderer_load_texture(renderer, IMAGE_PATH("stage_virgil.jpg"));
-    if (!bar) bar = renderer_load_texture(renderer, IMAGE_PATH("ui_bar.png"));
-
-    renderer_draw_texture(renderer, LAYER_UI1, bar, NULL, &(SDL_Rect){10,10,SCREEN_WIDTH-20, 64}, 0.0, SDL_FLIP_NONE);
-    renderer_draw_texture(renderer, LAYER_BACKGROUND, bg, NULL, NULL, 0.0, SDL_FLIP_NONE);
+    draw_ui_overlay(match, renderer);
 
     // Maybe a dynamic string buffer for rendering text
     static char buff[128] = "";
@@ -278,9 +279,9 @@ void match_render(const match_t *match, renderer_t *renderer)
     renderer_draw_text(renderer, LAYER_UI1, (const char *)buff, 20, 20, 20, 20, COLOR_WHITE);
 
     draw_dbg_boxes(renderer, &p1->fighter, COLOR_BLUE); 
-    draw_dbg_boxes(renderer, &p2->fighter, COLOR_BLUE);
+    draw_dbg_boxes(renderer, &p2->fighter, COLOR_RED);
 
-    if (p2->fighter.hit_landed) {
+    if (p2->fighter.last_hit_frame != -1) {
         renderer_draw_fighter(renderer, &p1->fighter);
         renderer_draw_fighter(renderer, &p2->fighter);
     } else
@@ -290,7 +291,19 @@ void match_render(const match_t *match, renderer_t *renderer)
     }
 }
 
-void draw_dbg_boxes(renderer_t *r, fighter_t *f, SDL_Color c)
+static void draw_ui_overlay(const match_t *match, renderer_t *renderer)
+{
+    static texture_handle_t bg = 0, bar = 0;
+
+    if (!bg)  bg  = renderer_load_texture(renderer, IMAGE_PATH("stage_grapoli.jpg"));
+    if (!bar) bar = renderer_load_texture(renderer, IMAGE_PATH("ui_bar.png"));
+
+    renderer_draw_texture(renderer, LAYER_UI1, bar, NULL, &(SDL_Rect){10,10,SCREEN_WIDTH-20, 64}, 0.0, SDL_FLIP_NONE);
+    renderer_draw_texture(renderer, LAYER_BACKGROUND, bg, NULL, NULL, 0.0, SDL_FLIP_NONE);
+}
+
+
+static void draw_dbg_boxes(renderer_t *r, fighter_t *f, SDL_Color c)
 {
     const anim_frame_t *col_f = fighter_get_frame_data(f);
 

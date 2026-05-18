@@ -8,6 +8,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows-blue"/>
+  <img src="https://img.shields.io/badge/platform-Linux-black"/>
   <img src="https://img.shields.io/badge/license-MIT-green"/>
   <img src="https://img.shields.io/badge/language-C-darkblue"/>
 </p>
@@ -17,7 +18,7 @@
 
 ## Features
 - *1 playable character* 
-- *1 playable stage* 
+- *2 playable stage* 
 
 ---
 
@@ -38,7 +39,8 @@
 | Platform | Status |
 |---|---|
 | Windows | ✅ Supported |
-| Linux | 🔜 Coming soon |
+| Linux | ✅ Supported |
+| Web | 🔜 Coming soon |
 
 ## Dependencies
 
@@ -46,6 +48,7 @@
 |---|---|
 | SDL2 | *2.32.6* |
 | SDL2_image | *2.8.2* |
+| SDL2_mixer | *2.8.0 (Unused)* |
 
 ## Build
 
@@ -59,17 +62,74 @@ If you want to know why would you even compile the script for building just to, 
 
 ### Windows
 
-1. Open *Cmd* or *PowerShell* and check if you are in the root folder of the repo (something like: ...\path\to\Street-Kebab-Fighter or).
-Run this command to compile the script: 
+1. Open *Cmd* or *PowerShell* and check if you are in the root folder of the repo 
+(something like: ...\path\to\Street-Kebab-Fighter)
+and run this command to compile the script: 
 ```
 gcc -o nob.exe nob.c
 ```
 
 2. Then run the nob script with:
-
 ```
 .\nob -run
 ```
+
+### Linux
+
+> [!WARNING]
+> No support for Linux static linking.
+
+1. Open *Bash* and check if you are in the root folder of the repo 
+(something like: .../path/to/Street-Kebab-Fighter)
+and run this command to compile the script: 
+```
+gcc -o nob nob.c
+```
+
+2. Then run the nob script with:
+```
+./nob -run
+```
+
+If the linker spits out a error about 'undefined references' 
+then you most likely dont have SDL2 dependenies installed.
+Here are the install commands across the major Linux distros and package managers:
+
+---
+
+**Debian / Ubuntu / Mint (apt)**
+```
+sudo apt install libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev
+```
+
+**Fedora / RHEL / CentOS (dnf)**
+```
+sudo dnf install SDL2-devel SDL2_image-devel SDL2_mixer-devel
+```
+
+**Arch / Manjaro (pacman)**
+```
+sudo pacman -S sdl2 sdl2_image sdl2_mixer
+```
+
+**openSUSE (zypper)**
+```
+sudo zypper install libSDL2-devel libSDL2_image-devel libSDL2_mixer-devel
+```
+
+**Gentoo (emerge)**
+```
+sudo emerge media-libs/libsdl2 media-libs/sdl2-image media-libs/sdl2-mixer
+```
+
+**NixOS / nix-shell**
+```
+nix-shell -p SDL2 SDL2_image SDL2_mixer
+```
+
+---
+
+After you installed dependenies you can just run *./nob -run* to compile the game again. 
 
 ### Build options
 
@@ -85,8 +145,9 @@ By default gcc is used but you can replace it with clang if you want.
 
 - [x] *Collision and attacking systems*
 - [x] *Build script with "nob.h"*
-- [ ] *Asset baking* - Allow compiling all assets directly into the game binary instead of loading them at runtime  
-- [ ] *Linux support*
+- [x] *Linux support*
+- [ ] *Asset baking* - All assets directly included into the game binary  
+- [ ] *Web support*
 
 ---
 

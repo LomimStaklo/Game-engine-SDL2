@@ -182,7 +182,7 @@ void renderer_draw_fighter(renderer_t *renderer, struct fighter_t *fighter);
 #ifdef RENDERER_IMPLEMENTATION
 
 #include <SDL2/SDL_image.h>
-#include <utils/macros.h>
+#include "macros.h"
 #include <string.h>
 #include "font_atlas.h"
 #include "fajter.h"
@@ -291,6 +291,10 @@ void renderer_start_drawing(renderer_t *renderer)
     
     SDL_SetRenderTarget(renderer->sdl_renderer, renderer->game_screen);
     SDL_RenderClear(renderer->sdl_renderer);
+        
+    static texture_handle_t rct = 0; 
+    if (!rct) rct = renderer_load_texture(renderer, IMAGE_PATH("ui_rct.png"));
+    renderer_draw_texture_mod(renderer, LAYER_UI2, rct, NULL, NULL, 0.0, SDL_FLIP_NONE, (SDL_Color){0,0,0,155});
 }
 
 void renderer_present(renderer_t *renderer)
@@ -435,6 +439,7 @@ void renderer_present(renderer_t *renderer)
             
         }
     }
+
     SDL_SetRenderTarget(renderer->sdl_renderer, NULL);
     SDL_SetRenderDrawColor(renderer->sdl_renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer->sdl_renderer);

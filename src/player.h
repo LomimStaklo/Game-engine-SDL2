@@ -107,7 +107,7 @@ bool player_check_combo(player_t *player, const input_sequence_t *seq);
 
 #ifdef PLAYER_IMPLEMENTATION
 
-#include <utils/macros.h>
+#include "macros.h"
 
 input_actions_t input_left_right_swap(bool is_facing_right, input_actions_t in)
 {
@@ -132,7 +132,7 @@ bool player_check_combo(player_t *player, const input_sequence_t *seq)
     int32_t history_len      = lenghtof(player->input_history);
     int32_t seq_step         = seq->count - 1;        // Start from the LAST step of sequence
     float newest_time        = player->input_timer;   // Newest input time
-    const float COMBO_WINDOW = 0.55f;                  // Max seconds between each input in the sequence
+    const float COMBO_WINDOW = 0.50f;                  // Max seconds between each input in the sequence
     // The combo depends on fighters facing direction
     const bool do_swap = player->fighter.facing_right; 
 

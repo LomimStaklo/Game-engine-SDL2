@@ -6,9 +6,13 @@ assets/audio/
 assets/images/*
 
 !assets/images/atlas_boke.png
+!assets/images/atlas_template.png
+
 !assets/images/SKF_icon.png
 !assets/images/SKF_logo.png
+
 !assets/images/stage_grapoli.jpg
 !assets/images/stage_cava.jpg
-!assets/images/atlas_template.png
+
 !assets/images/ui_bar.png
+!assets/images/ui_rct.png

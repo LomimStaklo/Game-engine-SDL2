@@ -11,7 +11,6 @@
 //  DECLARATION
 // =============
 
-
 // X macro for all playable character 
 #define CHARACTERS_XLIST \
 X(boke) \
@@ -28,7 +27,7 @@ bool load_all_characters(renderer_t *renderer);
 
 #ifdef CHARACTERS_IMPLEMENTATION
 #include <string.h>
-#include <utils/macros.h>
+#include "macros.h"
 
 #define ANIM(dur, lp, ...) \
     { .frame_duration = (dur), .loop = (lp), \

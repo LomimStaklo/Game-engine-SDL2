@@ -12,7 +12,6 @@
 // ---- LINUX ------------------------------------
 #else 
 #define EXECUTABLE_NAME "SKF"   
-#define LIBS_DIR        "src/libs"
 #define INCLUDE_DIR     "src/include"
 #define ASSETS_DIR      "assets"
 #define PATH_SLASH      "/"
@@ -47,12 +46,14 @@ int main(int argc, char **argv)
     
     nob_cmd_append(&cmd, compiler);
     nob_cmd_append(&cmd, "-o", EXECUTABLE_NAME);
-    nob_cmd_append(&cmd, "src/main.c", "src/game.c");
     nob_cmd_append(&cmd, "-I", INCLUDE_DIR);
-    nob_cmd_append(&cmd, "-L", LIBS_DIR);
+    nob_cmd_append(&cmd, "src/main.c", "src/game.c");
     
     // ---- WINDOWS ----------------------------------
     #ifdef _WIN32
+
+    // Linking static libs  
+    nob_cmd_append(&cmd, "-L", LIBS_DIR);
     
     if (do_static) 
     {
