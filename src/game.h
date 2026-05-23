@@ -21,10 +21,8 @@ typedef struct game_t
     input_t input;
     renderer_t renderer;
     game_time_t time;
-    
-    SDL_Window *window;
-    player_t players[2];
 
+    player_t players[2];
     bool running;
 } game_t;
 

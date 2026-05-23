@@ -138,6 +138,7 @@ Scrpit has a few flags like:
 - "-static" - Links the game statically instead of dynamically
 - "-dbg" - Compile with debug info
 - "-cc" - Change the compiler with the name of next argument
+- "-assets-baked" - Compiles the assets into the binary 
 
 By default gcc is used but you can replace it with clang if you want.
 
@@ -146,7 +147,7 @@ By default gcc is used but you can replace it with clang if you want.
 - [x] *Collision and attacking systems*
 - [x] *Build script with "nob.h"*
 - [x] *Linux support*
-- [ ] *Asset baking* - All assets directly included into the game binary  
+- [x] *Asset baking* - All assets directly included into the game binary  
 - [ ] *Web support*
 
 ---

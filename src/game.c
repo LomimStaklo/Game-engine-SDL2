@@ -3,10 +3,10 @@
 #define RENDERER_IMPLEMENTATION
 #define CHARACTERS_IMPLEMENTATION
 #define FAJTER_IMPLEMENTATION
-#define FONT_ATLAS_IMPLEMENTATION
 #define MATCH_IMPLEMENTATION
+#define ASSETS_IMPLEMENTATION
+#include "assets.h"
 #include "state.h"
-#include "font_atlas.h"
 #include "match.h"
 #include "game.h"
 
@@ -15,7 +15,6 @@
 #include <SDL2/SDL_image.h>
 
 #define INIT_FLAGS  (SDL_INIT_VIDEO | SDL_INIT_TIMER  | SDL_INIT_EVENTS)
-#define WIN_FLAGS   (SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE /*| SDL_WINDOW_FULLSCREEN_DESKTOP*/)
 #define IMAGE_FLAGS (IMG_INIT_JPG | IMG_INIT_PNG)
 
 bool init_game(game_t *game)
@@ -31,19 +30,7 @@ bool init_game(game_t *game)
         return false;
     }
 
-    game->window = SDL_CreateWindow
-    (
-        "Street Kebab Fajter",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        800, 600,
-        WIN_FLAGS
-    );
-    if (!game->window) { 
-        game_log( "ERROR", "SDL window: %s", SDL_GetError() );
-        return false;
-    } 
-    if (!init_renderer(&game->renderer, game->window)) {
+    if (!init_renderer(&game->renderer)) {
         game_log( "ERROR", "SDL renderer: %s", SDL_GetError() );
         return false; 
     }
@@ -52,11 +39,12 @@ bool init_game(game_t *game)
         game_log( "ERROR", "Keys not initialised count: %d", BUTTON_COUNT);
         return false;
     }
+
     // Icon loading
-    SDL_Surface *ico = IMG_Load(IMAGE_PATH("SKF_icon.png"));
+    SDL_Surface *ico = IMG_Load(IMAGE_PATH("ui_icon.png"));
     if (ico)
     {
-        SDL_SetWindowIcon(game->window, ico);
+        SDL_SetWindowIcon(game->renderer.sdl_window, ico);
         SDL_FreeSurface(ico);
     }
 
@@ -70,7 +58,6 @@ void no_game(game_t *game, int32_t exit_code)
 {
     //unload_media(game);
     destroy_renderer(&game->renderer);
-    SDL_DestroyWindow(game->window);
 
     IMG_Quit();
     SDL_Quit();
@@ -151,10 +138,10 @@ void handle_SDL_events(game_t *game)
                 if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) game->running = false; 
                 if (event.key.keysym.scancode == SDL_SCANCODE_F11)
                 {
-                    if (SDL_GetWindowFlags(game->window) & SDL_WINDOW_FULLSCREEN_DESKTOP)
-                        SDL_SetWindowFullscreen(game->window, 0);
+                    if (SDL_GetWindowFlags(game->renderer.sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP)
+                        SDL_SetWindowFullscreen(game->renderer.sdl_window, 0);
                     else
-                        SDL_SetWindowFullscreen(game->window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                        SDL_SetWindowFullscreen(game->renderer.sdl_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
                 }
 
                 game->input.keys[event.key.keysym.scancode].holding  = false;

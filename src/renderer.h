@@ -14,9 +14,6 @@
 //  DECLARATION
 // =============
 
-#define IMAGE_PATH(file) "assets/images/"file
-#define SOUND_PATH(file) "assets/audio/"file
-
 // ---- SCREEN SIZE ------
 #define SCREEN_WIDTH  640
 #define SCREEN_HEIGHT 360
@@ -109,14 +106,21 @@ typedef struct renderer_t
     uint32_t texture_count;
     
     SDL_Renderer *sdl_renderer;
+    SDL_Window *sdl_window;
+
     SDL_Texture *game_screen;
-    SDL_Texture *font_texture; // Special member that is baked in font from "font_atlas.h"
+    texture_handle_t font_texture; // Special member 
 } renderer_t;
 
-bool init_renderer(renderer_t *renderer, SDL_Window *window);
+bool init_renderer(renderer_t *renderer);
 void destroy_renderer(renderer_t *renderer); // Destroys the renderer with all textures
 
 texture_handle_t renderer_load_texture(renderer_t *renderer, const char *filename);
+/** 
+ * Loads the texture form array of bytes in to renderer
+ * \warning size of the texture cant be larger then ~2GB 
+*/
+texture_handle_t renderer_load_texture_from_mem(renderer_t *renderer, const uint8_t *data, size_t size);
 bool renderer_unload_texture(renderer_t *renderer, texture_handle_t tex_handle);
 
 SDL_Texture *renderer_handle_to_texture(renderer_t *renderer, texture_handle_t handle);
@@ -184,14 +188,26 @@ void renderer_draw_fighter(renderer_t *renderer, struct fighter_t *fighter);
 #include <SDL2/SDL_image.h>
 #include "macros.h"
 #include <string.h>
-#include "font_atlas.h"
 #include "fajter.h"
 
+#define WIN_FLAGS   (SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE /*| SDL_WINDOW_FULLSCREEN_DESKTOP*/)
 #define RENDERER_FLAGS (SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
 
-bool init_renderer(renderer_t *renderer, SDL_Window *window)
+bool init_renderer(renderer_t *renderer)
 {
-    renderer->sdl_renderer = SDL_CreateRenderer(window, -1, RENDERER_FLAGS);
+    renderer->sdl_window = SDL_CreateWindow
+    (
+        "Street Kebab Fajter",
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
+        800, 600,
+        WIN_FLAGS
+    );
+    if (!renderer->sdl_window) { 
+        return false;
+    } 
+
+    renderer->sdl_renderer = SDL_CreateRenderer(renderer->sdl_window, -1, RENDERER_FLAGS);
     if (!renderer->sdl_renderer) 
         return false;
     
@@ -207,8 +223,11 @@ bool init_renderer(renderer_t *renderer, SDL_Window *window)
     );
     
     SDL_SetTextureBlendMode(renderer->game_screen, SDL_BLENDMODE_BLEND);
-    renderer->font_texture = load_font_from_atlas(renderer);
     
+    if (!asset_load_all(renderer))
+        return false;
+    
+    renderer->font_texture = asset_get_texture(ASSET_UI_FONT);
     return true;
 }
 
@@ -223,13 +242,15 @@ void destroy_renderer(renderer_t *renderer)
         }
     }
 
-    SDL_DestroyTexture(renderer->font_texture);
     SDL_DestroyTexture(renderer->game_screen);
     SDL_DestroyRenderer(renderer->sdl_renderer);
-    renderer->font_texture = NULL;
+    renderer->font_texture = INVALID_TEXTURE_HANDLE;
     renderer->game_screen = NULL;
     renderer->sdl_renderer = NULL;
     renderer->texture_count = 0;
+
+    SDL_DestroyWindow(renderer->sdl_window);
+    renderer->sdl_window = NULL;
 }
 
 SDL_Texture *renderer_handle_to_texture(renderer_t *renderer, texture_handle_t handle)
@@ -242,37 +263,60 @@ SDL_Texture *renderer_handle_to_texture(renderer_t *renderer, texture_handle_t h
 
 texture_handle_t renderer_load_texture(renderer_t *renderer, const char *filename)
 {
-    texture_handle_t texture = INVALID_TEXTURE_HANDLE;
-
     if (renderer->texture_count >= MAX_RENDERER_TEXTURES) 
         return INVALID_TEXTURE_HANDLE;
-
+    
     SDL_Surface *surf = IMG_Load(filename);
-    if (!surf) return INVALID_TEXTURE_HANDLE;
-
+    if (!surf) 
+        return INVALID_TEXTURE_HANDLE;
+        
     SDL_Texture *rend_tex = SDL_CreateTextureFromSurface(renderer->sdl_renderer, surf);
     SDL_FreeSurface(surf);
+        
+    if (!rend_tex) 
+        return INVALID_TEXTURE_HANDLE;
     
-    if (!rend_tex) return INVALID_TEXTURE_HANDLE;
+    texture_handle_t handle = INVALID_TEXTURE_HANDLE;
     renderer->texture_count++;
-    
+
     for_range_i(renderer->texture_count)
         if (renderer->textures[i] == NULL)
         {   
-            texture = (texture_handle_t)i;
+            handle = (texture_handle_t)i;
             renderer->textures[i] = rend_tex;
-            //SDL_QueryTexture(
-            //    rend_tex, 
-            //    NULL, 
-            //    NULL,
-            //    &texture.src.w,
-            //    &texture.src.h
-            //);
             break;
         }
 
-    return texture;
+    return handle;
 }
+//#include "loging.h"
+texture_handle_t renderer_load_texture_from_mem(renderer_t *renderer, const uint8_t *data, size_t size)
+{
+    if (renderer->texture_count >= MAX_RENDERER_TEXTURES) 
+        return INVALID_TEXTURE_HANDLE;
+    
+    SDL_RWops *raw_bytes = SDL_RWFromConstMem((const void *)data, (int32_t)size);
+    SDL_Texture *texture = IMG_LoadTexture_RW(renderer->sdl_renderer, raw_bytes, 1);
+    //game_log( "ERROR", "SDL renderer: %s: s:%zu", SDL_GetError(), size);
+    
+    if (!texture)
+        return INVALID_TEXTURE_HANDLE;
+    
+    texture_handle_t handle = INVALID_TEXTURE_HANDLE;
+    renderer->texture_count++;
+
+    for_range_i(renderer->texture_count) 
+    {
+        if (renderer->textures[i] == NULL)
+        {   
+            handle = (texture_handle_t)i;
+            renderer->textures[i] = texture;
+            break;
+        }
+    }
+    return handle;
+}
+
 
 bool renderer_unload_texture(renderer_t *renderer, texture_handle_t tex_handle)
 {
@@ -292,9 +336,9 @@ void renderer_start_drawing(renderer_t *renderer)
     SDL_SetRenderTarget(renderer->sdl_renderer, renderer->game_screen);
     SDL_RenderClear(renderer->sdl_renderer);
         
-    static texture_handle_t rct = 0; 
-    if (!rct) rct = renderer_load_texture(renderer, IMAGE_PATH("ui_rct.png"));
-    renderer_draw_texture_mod(renderer, LAYER_UI2, rct, NULL, NULL, 0.0, SDL_FLIP_NONE, (SDL_Color){0,0,0,155});
+    //static texture_handle_t rct = 0; 
+    //if (!rct) rct = renderer_load_texture(renderer, IMAGE_PATH("ui_rct.png"));
+    //renderer_draw_texture_mod(renderer, LAYER_UI2, rct, NULL, NULL, 0.0, SDL_FLIP_NONE, (SDL_Color){0,0,0,155});
 }
 
 void renderer_present(renderer_t *renderer)
@@ -398,8 +442,9 @@ void renderer_present(renderer_t *renderer)
                 // ---- TEXT ----------------------------------------------------------------------------
                 case REND_CMD_TEXT: 
                 {
+                    SDL_Texture *font = renderer->textures[renderer->font_texture];
                     SDL_SetTextureColorMod(
-                        renderer->font_texture, 
+                        font, 
                         cmd->text.col.r,
                         cmd->text.col.g,
                         cmd->text.col.b
@@ -428,7 +473,7 @@ void renderer_present(renderer_t *renderer)
                         }
                         // Renders the text to screen rect by rect, char by char
                         SDL_Rect src = tile_from_atlas((chr - 32), FONT_W, FONT_H, FONT_ATLAS_COLUMS);
-                        SDL_RenderCopy(renderer->sdl_renderer, renderer->font_texture, &src, &dst);
+                        SDL_RenderCopy(renderer->sdl_renderer, font, &src, &dst);
 
                         dst.x += dst.w;
                     }
@@ -641,8 +686,8 @@ void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter)
 {   
     const anim_frame_t *frame = fighter_get_frame_data(fighter);
     
+    // Direction corection
     SDL_Rect dst; 
-
     if (fighter->facing_right) 
         dst.x = (int32_t)fighter->position_x - frame->offset_x;
     else
@@ -652,16 +697,10 @@ void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter)
     dst.w = frame->src.w; 
     dst.h = frame->src.h;
     
-    //SDL_SetTextureColorMod(
-    //    renderer_handle_to_texture(renderer, fighter->visuals->atlas_tex), 
-    //    0, 0, 0
-    //);
-
-    // fighter->visuals.atlas_tex
     renderer_draw_texture(
         renderer, 
         LAYER_ENTITY,
-        fighter->visuals->atlas_tex, 
+        fighter->texture, 
         &frame->src,
         &dst, 
         0.0, 
@@ -675,7 +714,7 @@ void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter)
     renderer_draw_texture_mod(
         renderer, 
         LAYER_ENTITY,
-        fighter->visuals->atlas_tex, 
+        fighter->texture, 
         &frame->src,
         &shadow, 
         180.0, 

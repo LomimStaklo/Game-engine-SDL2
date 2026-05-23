@@ -17,9 +17,7 @@ X(boke) \
 // ----------------------------------
 
 extern const fighter_t fajter_boke;
-
-const fighter_t *load_character(renderer_t *renderer, const char *fajter_name);
-bool load_all_characters(renderer_t *renderer);
+fighter_t character_get(const char *fajter_name);
 
 // ================
 //  IMPLEMENTATION
@@ -65,7 +63,7 @@ bool load_all_characters(renderer_t *renderer);
 
 static fighter_visuals_t visuals_boke =
 {
-    .atlas_tex  = INVALID_TEXTURE_HANDLE,
+    .default_asset = ASSET_ATLAS_BOKE,
     .animations = 
     {    
         /* ANIM(frame_duration, loop, startup_frames, active_frames, frame_data(src, x, y, w, h)) */
@@ -206,6 +204,7 @@ const fighter_t fajter_boke =
     .visuals    = &visuals_boke,
     .animation  = &visuals_boke.animations[ANIM_IDLE],
     .animation_id = ANIM_IDLE,
+    .texture = INVALID_TEXTURE_HANDLE,
     .is_grounded = true,
 
     // ---- ATTACK STATS ------------------------------------------------------------------
@@ -289,33 +288,17 @@ const fighter_t fajter_boke =
         },
     }
 };
-
-// Returns NULL on failed load
-const fighter_t *load_character(renderer_t *renderer, const char *fajter_name)
+fighter_t character_get(const char *fajter_name)
 {
-    const fighter_t *fighter = NULL;
+    fighter_t fajter = {0};
 #define X(name) \
-    if ((strcmp(#name, fajter_name) == 0)) {  \
-        visuals_ ## name.atlas_tex = renderer_load_texture(renderer, IMAGE_PATH("atlas_"#name".png")); \
-        if (visuals_ ## name.atlas_tex == INVALID_TEXTURE_HANDLE) return NULL; \
-        fighter = &fajter_ ## name;}
-
+if (strcmp(#name, fajter_name) == 0) fajter = fajter_ ## name;
     CHARACTERS_XLIST
 #undef X
+    
+    fajter.texture = asset_get_texture(fajter.visuals->default_asset);
 
-    return fighter;
-}
-
-bool load_all_characters(renderer_t *renderer)
-{
-#define X(name) \
-    visuals_ ## name.atlas_tex = renderer_load_texture(renderer, IMAGE_PATH("atlas_"#name".png")); \
-    if (visuals_ ## name.atlas_tex == INVALID_TEXTURE_HANDLE) return false;
-        
-    CHARACTERS_XLIST
-#undef X
-
-    return true;
+    return fajter;
 }
 
 #endif /* CHARACTERS_IMPLEMENTATION */

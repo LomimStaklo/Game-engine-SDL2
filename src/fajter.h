@@ -8,6 +8,7 @@
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "assets.h"
 
 // -------------
 //  DECLARATION
@@ -78,7 +79,7 @@ typedef struct animation_t
 
 typedef struct fighter_visuals_t
 {
-    int32_t atlas_tex;
+    asset_name_t default_asset;
     animation_t animations[ANIM_COUNT];
 } fighter_visuals_t;
 
@@ -164,6 +165,7 @@ typedef struct fighter_t
 {
     const char *name;
 
+    int32_t texture;
     const fighter_visuals_t *visuals; // Sprite atlas and collisions
     const animation_t *animation;       // Current animation
     animation_id_t     animation_id;    // Same animation 

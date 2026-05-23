@@ -73,12 +73,11 @@ void state_init(game_state_t *state, renderer_t *renderer, player_t *p1, player_
     state->curr_state = GAME_STATE_MENU;
     state->next_state = GAME_STATE_MENU;
 
-    const fighter_t *boke = load_character(renderer, "boke");
-    assert((boke != NULL) && "atlas_boke.png not loaded");
-
-    p1->fighter = *boke;
-    p2->fighter = *boke;
-
+    fighter_t boke = character_get("boke");
+    
+    p1->fighter = boke;
+    p2->fighter = boke;
+    
     state->match = match_start(90.0f, 3, p1, p2);
 }
 

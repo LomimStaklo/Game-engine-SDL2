@@ -5,6 +5,8 @@
 assets/audio/
 assets/images/*
 
+src/assets_baked.h
+
 !assets/images/atlas_boke.png
 !assets/images/atlas_template.png
 
@@ -15,4 +17,5 @@ assets/images/*
 !assets/images/stage_cava.jpg
 
 !assets/images/ui_bar.png
-!assets/images/ui_rct.png
+!assets/images/ui_font.png
+!assets/images/ui_icon.png

@@ -39,6 +39,7 @@ void match_render(const match_t *match, struct renderer_t *renderer);
 #ifdef MATCH_IMPLEMENTATION
 #include "renderer.h"
 #include "player.h" 
+#include "characters.h"
 
 match_t match_start(float duration, int32_t rounds, player_t *p1, player_t *p2)
 {
@@ -62,7 +63,6 @@ match_t match_start(float duration, int32_t rounds, player_t *p1, player_t *p2)
     
     match.p2->fighter.position_x = (SCREEN_WIDTH / 2) + 20;
     match.p2->fighter.position_y = SCREEN_HEIGHT / 2;
-    
 
     return match;
 }
@@ -293,6 +293,7 @@ void match_render(const match_t *match, renderer_t *renderer)
 
 static void draw_ui_overlay(const match_t *match, renderer_t *renderer)
 {
+    (void)match;
     static texture_handle_t bg = 0, bar = 0;
 
     if (!bg)  bg  = renderer_load_texture(renderer, IMAGE_PATH("stage_grapoli.jpg"));
