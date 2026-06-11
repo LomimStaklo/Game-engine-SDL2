@@ -6,14 +6,16 @@
 #include <stdbool.h>
 #include "player.h"
 #include "renderer.h"
+#include "machine.h"
 
 typedef struct game_time_t
 {
-    uint64_t frequency;          // Cache frequency (it's constant)
-    uint64_t frame_start;        // Use uint64_t for performance counter
-    float    delta_time;
-    float    target_frame_s;     // Target in seconds (more natural)
-    uint32_t target_frame_ms;    // Keep for SDL_Delay fallback
+    uint64_t frequency;       // Cache frequency (it's constant)
+    uint64_t frame_start;     // Use uint64_t for performance counter
+    uint32_t target_frame_ms; // Keep for SDL_Delay fallback
+    float target_frame_s;     // Target in seconds (more natural)
+    float delta_time;         
+    float accumulator; 
 } game_time_t;
 
 typedef struct game_t 
@@ -21,8 +23,9 @@ typedef struct game_t
     input_t input;
     renderer_t renderer;
     game_time_t time;
+    machine_t machine;
 
-    player_t players[2];
+    player_t p1, p2;
     bool running;
 } game_t;
 

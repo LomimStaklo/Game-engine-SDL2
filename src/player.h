@@ -95,7 +95,7 @@ typedef struct player_t
     float           input_timer; // Timestamp of the newest input
 } player_t;
 
-bool init_players(player_t player[2], input_t *input);
+bool init_players(input_t *input, player_t *p1, player_t *p2);
 input_actions_t player_get_input(player_t *player);  // Gets the input bitflags  
 input_actions_t input_left_right_swap(bool is_facing_right, input_actions_t in);
 void player_record_input(player_t *player, float delta_time);
@@ -109,6 +109,7 @@ bool player_check_combo(player_t *player, const input_sequence_t *seq);
 
 #include "macros.h"
 
+// Swaps the left and right arows if facing left 
 input_actions_t input_left_right_swap(bool is_facing_right, input_actions_t in)
 {
     if (!is_facing_right)
@@ -190,8 +191,13 @@ void player_record_input(player_t *player, float delta_time)
     player->input_timestamps[last] = player->input_timer;
 }
 
-bool init_players(player_t player[2], input_t *input)
+bool init_players(input_t *input, player_t *p1, player_t *p2)
 {
+    // The cursor dosen't dissapear but it isnt tracked    
+    SDL_ShowCursor(SDL_ENABLE);
+    input->mouse.is_active = false; 
+    
+    // Keabord only
     const SDL_Scancode keys_p1[] = 
     {
         SDL_SCANCODE_W,
@@ -220,8 +226,8 @@ bool init_players(player_t player[2], input_t *input)
 
     for_range_i(BUTTON_COUNT)
     {
-        player[0].keybinds[i] = &input->keys[keys_p1[i]];
-        player[1].keybinds[i] = &input->keys[keys_p2[i]];
+        p1->keybinds[i] = &input->keys[keys_p1[i]];
+        p2->keybinds[i] = &input->keys[keys_p2[i]];
     }
 
     return true;

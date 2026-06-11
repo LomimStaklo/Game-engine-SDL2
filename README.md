@@ -3,11 +3,12 @@
 > *A 2D fighting game about settling disputes the old-fashioned way with your favorite characters from "Čaršija"*
 
 <p align="center">
-  <img src="assets/images/SKF_logo.png" alt="Street Kebab Fighter Logo" width="128"/>
+  <img src="footage/SKF_logo.png" alt="Street Kebab Fighter Logo" width="128"/>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows-blue"/>
+  <img src="https://img.shields.io/badge/platform-Web-purple"/>
   <img src="https://img.shields.io/badge/platform-Linux-black"/>
   <img src="https://img.shields.io/badge/license-MIT-green"/>
   <img src="https://img.shields.io/badge/language-C-darkblue"/>
@@ -40,7 +41,7 @@
 |---|---|
 | Windows | ✅ Supported |
 | Linux | ✅ Supported |
-| Web | 🔜 Coming soon |
+| Web | ✅ Supported |
 
 ## Dependencies
 
@@ -51,6 +52,12 @@
 | SDL2_mixer | *2.8.0 (Unused)* |
 
 ## Build
+
+| Dependency | Is Required | Description |
+|---|---|---|
+| C compiler | *YES* | *gcc/clang*: Or any GUN compatibile compiler |
+| WASM C compiler | *NO* | *emcc*: Only for targeting web |
+| Python | *NO* | Only for web server for a web target |
 
 The game can be built using a "nob.h" (Tscoding: [Github](https://github.com/tsoding)) script, but it only supports **gcc** or **clang** compilers. 
 
@@ -127,6 +134,25 @@ sudo emerge media-libs/libsdl2 media-libs/sdl2-image media-libs/sdl2-mixer
 nix-shell -p SDL2 SDL2_image SDL2_mixer
 ```
 
+### Web
+
+The web compilation requiers C compiler and a WASAM C compiler because of the run script.
+Also the '-run' flag spins a python server.    
+
+1. Open terminal and check if you are in the root folder of the repo 
+and run this command to compile the script: 
+```
+gcc -o nob nob.c
+```
+
+2. Run the script with:
+```
+./nob -run -assets-baked -platform web 
+```
+
+Note that web compilation requiers '-assets-baked' flag. 
+If you are on Windows you can use backslash ".\\" instead of forward slash "./" in the script.
+
 ---
 
 After you installed dependenies you can just run *./nob -run* to compile the game again. 
@@ -139,6 +165,7 @@ Scrpit has a few flags like:
 - "-dbg" - Compile with debug info
 - "-cc" - Change the compiler with the name of next argument
 - "-assets-baked" - Compiles the assets into the binary 
+- "-platform" - Target a platform (default: "native"): "win32", "linux", "web"   
 
 By default gcc is used but you can replace it with clang if you want.
 
@@ -148,7 +175,7 @@ By default gcc is used but you can replace it with clang if you want.
 - [x] *Build script with "nob.h"*
 - [x] *Linux support*
 - [x] *Asset baking* - All assets directly included into the game binary  
-- [ ] *Web support*
+- [x] *Web support*
 
 ---
 

@@ -7,8 +7,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 struct renderer_t;
+struct SDL_Surface;
 
 typedef enum asset_type_t 
 {
@@ -38,11 +40,12 @@ typedef struct asset_t
  * #define X(name, type, file) 
  */
 #define ASSET_XLIST \
-X(ATLAS_BOKE,  ASSET_TYPE_IMAGE, "atlas_boke.png") \
-X(STAGE_CAVA,  ASSET_TYPE_IMAGE, "stage_cava.jpg") \
-X(UI_GAME_BAR, ASSET_TYPE_IMAGE, "ui_bar.png") \
-X(UI_FONT,     ASSET_TYPE_IMAGE, "ui_font.png") \
-X(UI_ICON,     ASSET_TYPE_IMAGE, "ui_icon.png")
+X(ATLAS_BOKE,  ASSET_TYPE_IMAGE, IMAGE_PATH("atlas_boke.png")) \
+X(STAGE_CAVA,  ASSET_TYPE_IMAGE, IMAGE_PATH("stage_cava.jpg")) \
+X(UI_GAME_BAR, ASSET_TYPE_IMAGE, IMAGE_PATH("ui_bar.png")) \
+X(UI_FONT,     ASSET_TYPE_IMAGE, IMAGE_PATH("ui_font.png")) \
+
+//X(UI_ICON,     ASSET_TYPE_IMAGE, IMAGE_PATH("ui_icon.png"))
 
 typedef enum asset_name_t
 {
@@ -52,24 +55,31 @@ typedef enum asset_name_t
     ASSET_COUNT
 } asset_name_t;
 
-/** 
- * Macro defining if the assets are baked in  
-*/
-
+// All assets live in here
 extern asset_t global_assets[ASSET_COUNT];
-#ifdef ASSETS_BAKED
-extern const uint8_t assets_baked_data[];
-#endif // ASSETS_BAKED
 
 bool asset_load(asset_t *asset, struct renderer_t *renderer);
 void asset_unload(asset_t *asset, struct renderer_t *renderer);
 int32_t asset_get_texture(asset_name_t name);
+struct SDL_Surface *asset_load_as_surface(asset_name_t name);
 
 bool asset_load_all(struct renderer_t *renderer);
 void asset_unload_all(struct renderer_t *renderer);
 
 #ifdef ASSETS_IMPLEMENTATION
 #include "renderer.h"
+
+/** If the are baked then it incldes the raw bytes of every asset */
+#ifdef ASSETS_BAKED 
+#include "assets_baked.h"
+#else
+asset_t global_assets[ASSET_COUNT] = {
+    #define X(name, type_, file) \
+    [ASSET_ ## name] = {.type = type_, .path = file},
+        ASSET_XLIST
+    #undef X
+};
+#endif
 
 bool asset_load(asset_t *asset, renderer_t *renderer)
 {
@@ -94,6 +104,25 @@ bool asset_load(asset_t *asset, renderer_t *renderer)
     }
     
     return asset->loaded;
+}
+
+SDL_Surface *asset_load_as_surface(asset_name_t name)
+{
+    if (!is_in_range(0, ASSET_COUNT, name)) 
+        return NULL; 
+
+    asset_t *asset = &global_assets[name];
+    assert(asset->type == ASSET_TYPE_IMAGE && "Only images can be surfaces");
+    
+#ifdef ASSETS_BAKED
+    const uint8_t *data = assets_baked_data + asset->offset;
+    SDL_RWops *raw_bytes = SDL_RWFromConstMem((const void *)data, (int32_t)asset->size);
+    SDL_Surface *surf = IMG_Load_RW(raw_bytes, 1);
+#else
+    SDL_Surface *surf = IMG_Load(asset->path);
+#endif
+
+    return surf;
 }
 
 void asset_unload(asset_t *asset, renderer_t *renderer)
@@ -135,18 +164,6 @@ void asset_unload_all(renderer_t *renderer)
         asset_unload(&global_assets[i], renderer);
     }
 }
-
-/** If the are baked then it incldes the raw bytes of every asset */
-#ifdef ASSETS_BAKED 
-#include "assets_baked.h"
-#else
-asset_t global_assets[ASSET_COUNT] = {
-    #define X(name, type_, file) \
-    [ASSET_ ## name] = {.type = type_, .path = (type_ == ASSET_TYPE_IMAGE) ? IMAGE_PATH(file) : file},
-        ASSET_XLIST
-    #undef X
-};
-#endif
 
 #endif // ASSETS_IMPLEMENTATION
 

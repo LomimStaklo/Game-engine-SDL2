@@ -6,18 +6,19 @@
 
 // Checks range includeing first number "from" but excludeing last "to" 
 #define is_in_range(from, to, value) (((from) <= (value)) && ((value) < (to)))
-#define to_str(name) #name
+#define TO_STR(name) #name
 #define lenghtof(arr) (sizeof((arr)) / sizeof((arr)[0]))
 #define for_range_i(count) for (uint32_t i = 0; i < (count); i++)
 #define for_range_j(count) for (uint32_t j = 0; j < (count); j++)
+#define str_bool(expr) (expr) ? "true" : "false"  
 
 /** 
  * Compile time assert
  * \param val the value that gets returned
  * \param expr the assertion expresion
- * \returns an integer or a compile time error  
+ * \returns an integer, or a compile time error  
  */
-#define inline_static_assert(val, expr) (sizeof(char [(expr) ? -1 : (val)])) 
+#define inline_static_assert(val, expr) ((val) * sizeof(char [(expr) ? 1 : -1])) 
 
 /** 
  * Index based atlas access that assumes the origin at (0, 0)

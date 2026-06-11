@@ -1,16 +1,19 @@
-.vscode
+.vscode/
 *.exe.old
 *.exe
+index.*
+.ignore/
 
 assets/audio/
 assets/images/*
 
 src/assets_baked.h
+icon/res.rc
+icon/icon.ico
 
 !assets/images/atlas_boke.png
 !assets/images/atlas_template.png
 
-!assets/images/SKF_icon.png
 !assets/images/SKF_logo.png
 
 !assets/images/stage_grapoli.jpg

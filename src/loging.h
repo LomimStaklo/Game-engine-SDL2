@@ -7,7 +7,7 @@
 #define GAME_LOG_FILE stderr
 
 #define game_log(log_type, fmt, ...) \
-    fprintf(GAME_LOG_FILE,"\033[31m [" log_type "]:\033[0m"" %s:%d:%s(): " fmt "\n", \
+    fprintf(GAME_LOG_FILE,"\033[31m[" log_type "]:\033[0m"" %s:%d:%s(): " fmt "\n", \
     __FILE__, __LINE__, __func__, __VA_ARGS__)
 
 #ifdef ENABLE_TIME_LOGING

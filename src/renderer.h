@@ -123,6 +123,8 @@ texture_handle_t renderer_load_texture(renderer_t *renderer, const char *filenam
 texture_handle_t renderer_load_texture_from_mem(renderer_t *renderer, const uint8_t *data, size_t size);
 bool renderer_unload_texture(renderer_t *renderer, texture_handle_t tex_handle);
 
+texture_handle_t renderer_load_surface(renderer_t *renderer, SDL_Surface *surf, bool srcfree);
+
 SDL_Texture *renderer_handle_to_texture(renderer_t *renderer, texture_handle_t handle);
 void renderer_start_drawing(renderer_t *renderer);
 void renderer_present(renderer_t *renderer);
@@ -147,7 +149,6 @@ void renderer_draw_texture_mod(
     SDL_RendererFlip flip,
     SDL_Color col
 );
-
 
 void renderer_draw_rect(
     renderer_t *renderer,
@@ -289,7 +290,7 @@ texture_handle_t renderer_load_texture(renderer_t *renderer, const char *filenam
 
     return handle;
 }
-//#include "loging.h"
+
 texture_handle_t renderer_load_texture_from_mem(renderer_t *renderer, const uint8_t *data, size_t size)
 {
     if (renderer->texture_count >= MAX_RENDERER_TEXTURES) 
@@ -317,13 +318,38 @@ texture_handle_t renderer_load_texture_from_mem(renderer_t *renderer, const uint
     return handle;
 }
 
+texture_handle_t renderer_load_surface(renderer_t *renderer, SDL_Surface *surf, bool srcfree)
+{
+    if (renderer->texture_count >= MAX_RENDERER_TEXTURES) 
+        return INVALID_TEXTURE_HANDLE;
+    
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer->sdl_renderer, surf);
+    if (srcfree) SDL_FreeSurface(surf);
+    if (!texture)
+        return INVALID_TEXTURE_HANDLE;
+    
+    texture_handle_t handle = INVALID_TEXTURE_HANDLE;
+    renderer->texture_count++;
+
+    for_range_i(renderer->texture_count) 
+    {
+        if (renderer->textures[i] == NULL)
+        {   
+            handle = (texture_handle_t)i;
+            renderer->textures[i] = texture;
+            break;
+        }
+    }
+    return handle;
+}
 
 bool renderer_unload_texture(renderer_t *renderer, texture_handle_t tex_handle)
 {
     if (!is_in_range(0, (int32_t)renderer->texture_count, tex_handle))
         return false;
     
-    SDL_DestroyTexture(renderer->textures[tex_handle]);
+    if (renderer->textures[tex_handle])
+        SDL_DestroyTexture(renderer->textures[tex_handle]);
     renderer->textures[tex_handle] = NULL;
     return true;
 }
@@ -335,10 +361,6 @@ void renderer_start_drawing(renderer_t *renderer)
     
     SDL_SetRenderTarget(renderer->sdl_renderer, renderer->game_screen);
     SDL_RenderClear(renderer->sdl_renderer);
-        
-    //static texture_handle_t rct = 0; 
-    //if (!rct) rct = renderer_load_texture(renderer, IMAGE_PATH("ui_rct.png"));
-    //renderer_draw_texture_mod(renderer, LAYER_UI2, rct, NULL, NULL, 0.0, SDL_FLIP_NONE, (SDL_Color){0,0,0,155});
 }
 
 void renderer_present(renderer_t *renderer)

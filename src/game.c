@@ -1,12 +1,12 @@
 #define PLAYER_IMPLEMENTATION
-#define STATE_IMPLEMENTATION
+#define MACHINE_IMPLEMENTATION
 #define RENDERER_IMPLEMENTATION
 #define CHARACTERS_IMPLEMENTATION
 #define FAJTER_IMPLEMENTATION
 #define MATCH_IMPLEMENTATION
 #define ASSETS_IMPLEMENTATION
 #include "assets.h"
-#include "state.h"
+#include "machine.h"
 #include "match.h"
 #include "game.h"
 
@@ -35,28 +35,28 @@ bool init_game(game_t *game)
         return false; 
     }
     
-    if (!init_players(game->players, &game->input)) {
+    if (!init_players(&game->input, &game->p1, &game->p2)) {
         game_log( "ERROR", "Keys not initialised count: %d", BUTTON_COUNT);
         return false;
     }
 
     // Icon loading
-    SDL_Surface *ico = IMG_Load(IMAGE_PATH("ui_icon.png"));
-    if (ico)
-    {
-        SDL_SetWindowIcon(game->renderer.sdl_window, ico);
-        SDL_FreeSurface(ico);
-    }
+    //SDL_Surface *ico = IMG_Load(IMAGE_PATH("ui_icon.png"));
+    //if (ico)
+    //{
+    //    SDL_SetWindowIcon(game->renderer.sdl_window, ico);
+    //    SDL_FreeSurface(ico);
+    //}
 
     game_time_init(&game->time, 60); // FPS 60 
-    game->input.mouse.is_active = SDL_ShowCursor(SDL_ENABLE);
+    machine_init(&game->machine, &game->renderer, &game->p1, &game->p2);
+    
     game->running = true; 
     return true;
 }
 
 void no_game(game_t *game, int32_t exit_code)
 {
-    //unload_media(game);
     destroy_renderer(&game->renderer);
 
     IMG_Quit();
