@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 #define NOB_IMPLEMENTATION 
 #include "nob.h"
 #include "src/assets.h"
@@ -13,6 +15,7 @@
 #else 
 #define EXECUTABLE_NAME "SKF"   
 #define INCLUDE_DIR     "src/include"
+#define LIBS_DIR        "src/libs"
 #define PATH_SLASH      "/"
 #endif
 

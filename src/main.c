@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "game.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
