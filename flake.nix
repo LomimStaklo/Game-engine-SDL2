@@ -12,7 +12,7 @@
         buildInputs = with pkgs ; [ SDL2 sdl2-compat SDL2_image SDL2_mixer libwebp libtiff ];
         buildPhase = ''
           cc -o nob nob.c
-          ./nob
+          ./nob -assets-baked
         '';
         installPhase = ''
           mkdir -p $out/bin
