@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 #define NOB_IMPLEMENTATION 
 #include "nob.h"
 #include "src/assets.h"
@@ -13,6 +15,7 @@
 #else 
 #define EXECUTABLE_NAME "SKF"   
 #define INCLUDE_DIR     "src/include"
+#define LIBS_DIR        "src/libs"
 #define PATH_SLASH      "/"
 #endif
 
@@ -45,7 +48,7 @@ int main(int argc, char **argv)
     bool do_assets_baked = false;          
     
     platform_t platform    = PLATFORM_NATIVE; 
-    const char *compiler = "gcc";
+    const char *compiler = "cc";
 
     // ---- USER ARGS -------------------------------------------------------------
     for (size_t i = 1; i < argc; i++)

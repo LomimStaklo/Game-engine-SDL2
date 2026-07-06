@@ -5,6 +5,7 @@
 #define FAJTER_IMPLEMENTATION
 #define MATCH_IMPLEMENTATION
 #define ASSETS_IMPLEMENTATION
+#include <stdlib.h>
 #include "assets.h"
 #include "machine.h"
 #include "match.h"
