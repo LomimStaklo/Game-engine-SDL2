@@ -48,7 +48,7 @@ int main(int argc, char **argv)
     bool do_assets_baked = false;          
     
     platform_t platform    = PLATFORM_NATIVE; 
-    const char *compiler = "gcc";
+    const char *compiler = "cc";
 
     // ---- USER ARGS -------------------------------------------------------------
     for (size_t i = 1; i < argc; i++)
