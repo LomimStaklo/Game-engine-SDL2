@@ -69,11 +69,11 @@ match_t match_start(float duration, int32_t rounds, player_t *p1, player_t *p2, 
         .f2_hp_per = 1.0f,
     };
 
-    match.p1->fighter.position_x = (SCREEN_WIDTH / 2) - 20;
-    match.p1->fighter.position_y = SCREEN_HEIGHT / 2;
+    match.p1->fighter.position.x = (SCREEN_WIDTH / 2) - 20;
+    match.p1->fighter.position.y = SCREEN_HEIGHT / 2;
     
-    match.p2->fighter.position_x = (SCREEN_WIDTH / 2) + 20;
-    match.p2->fighter.position_y = SCREEN_HEIGHT / 2;
+    match.p2->fighter.position.x = (SCREEN_WIDTH / 2) + 20;
+    match.p2->fighter.position.y = SCREEN_HEIGHT / 2;
 
     return match;
 }
@@ -87,7 +87,7 @@ static void match_set_state(match_t *match, match_state_t state)
 static void match_enforce_rules(player_t *p1, player_t *p2, bool record_input, float delta_time)
 {
     // Fighters allways facing each other
-    p1->fighter.facing_right = (p1->fighter.position_x < p2->fighter.position_x) 
+    p1->fighter.facing_right = (p1->fighter.position.x < p2->fighter.position.x) 
         ? true 
         : false; 
     p2->fighter.facing_right = !p1->fighter.facing_right;
@@ -108,26 +108,26 @@ static void match_enforce_rules(player_t *p1, player_t *p2, bool record_input, f
     {
         // P1 
         float dir = p1->fighter.facing_right ? -1.0f : 1.0f;
-        float total_vel = SDL_fabsf(p1->fighter.velocity_x) + SDL_fabsf(p2->fighter.velocity_x);
+        float total_vel = SDL_fabsf(p1->fighter.velocity.x) + SDL_fabsf(p2->fighter.velocity.x);
         
         float f1_pushed = (total_vel > 0.0f)
-            ?  SDL_fabsf(p1->fighter.velocity_x) / total_vel
+            ?  SDL_fabsf(p1->fighter.velocity.x) / total_vel
             : 0.5f;
         float f2_pushed = 1.0f - f1_pushed;
 
-        bool p1_walled = (p1->fighter.position_x <= 10.0f || p1->fighter.position_x >= SCREEN_WIDTH - 10);
-        bool p2_walled = (p2->fighter.position_x <= 10.0f || p2->fighter.position_x >= SCREEN_WIDTH - 10);
+        bool p1_walled = (p1->fighter.position.x <= 10.0f || p1->fighter.position.x >= SCREEN_WIDTH - 10);
+        bool p2_walled = (p2->fighter.position.x <= 10.0f || p2->fighter.position.x >= SCREEN_WIDTH - 10);
     
         if (p1_walled)      { f1_pushed = 0.0f; f2_pushed = 1.0f; }
         else if (p2_walled) { f1_pushed = 1.0f; f2_pushed = 0.0f; }
 
-        p1->fighter.position_x +=  (dir * overlap * f1_pushed);
-        p2->fighter.position_x += -(dir * overlap * f2_pushed);
+        p1->fighter.position.x +=  (dir * overlap * f1_pushed);
+        p2->fighter.position.x += -(dir * overlap * f2_pushed);
     }
     
     // Prevent walking off screen  
-    p1->fighter.position_x = SDL_clamp(p1->fighter.position_x, 10.0f, (float)SCREEN_WIDTH - 10.0f);
-    p2->fighter.position_x = SDL_clamp(p2->fighter.position_x, 10.0f, (float)SCREEN_WIDTH - 10.0f);
+    p1->fighter.position.x = SDL_clamp(p1->fighter.position.x, 10.0f, (float)SCREEN_WIDTH - 10.0f);
+    p2->fighter.position.x = SDL_clamp(p2->fighter.position.x, 10.0f, (float)SCREEN_WIDTH - 10.0f);
 }
 
 void match_update(match_t *match, float delta_time)
@@ -157,11 +157,17 @@ void match_update(match_t *match, float delta_time)
                 { 
                     match->score_p1++;
                     match->rounds--;
+
+                    fighter_set_state(&p2->fighter, STATE_KNOCKDOWN);
+                    p2->fighter.active_stun_duration = TICKS(120);
                 }
                 else if (match->f1_hp_per < match->f2_hp_per) 
                 { 
                     match->score_p2++;
                     match->rounds--;
+
+                    fighter_set_state(&p1->fighter, STATE_KNOCKDOWN);
+                    p1->fighter.active_stun_duration = TICKS(120);
                 }
                     
                 match_set_state(match, MATCH_STATE_END);
@@ -169,8 +175,8 @@ void match_update(match_t *match, float delta_time)
             
             match_enforce_rules(p1, p2, true, delta_time);
 
-            fighter_check_attack(&p1->fighter, &p2->fighter, match);
-            fighter_check_attack(&p2->fighter, &p1->fighter, match);
+            fighter_update_attack(&p1->fighter, &p2->fighter, match);
+            fighter_update_attack(&p2->fighter, &p1->fighter, match);
     
             fighter_update(p1, &p1->fighter, delta_time);
             fighter_update(p2, &p2->fighter, delta_time);
@@ -206,6 +212,9 @@ void match_update(match_t *match, float delta_time)
             fighter_update(p1, &p1->fighter, delta_time);
             fighter_update(p2, &p2->fighter, delta_time);
             
+            fighter_projectile_update(&p1->fighter, &p2->fighter, delta_time);
+            fighter_projectile_update(&p2->fighter, &p1->fighter, delta_time);
+            
             break;
         }
 
@@ -220,6 +229,8 @@ void match_update(match_t *match, float delta_time)
 
             fighter_update(p1, &p1->fighter, delta_time / 2);
             fighter_update(p2, &p2->fighter, delta_time / 2);
+            fighter_projectile_update(&p1->fighter, &p2->fighter, delta_time);
+            fighter_projectile_update(&p2->fighter, &p1->fighter, delta_time);
             
             break;
         }
@@ -240,14 +251,13 @@ void match_update(match_t *match, float delta_time)
                     fighter_set_state(&p1->fighter, STATE_KNOCKDOWN);
                 }
             }
-
-            if (match->state_timer >= 7.0f) 
-                match_set_state(match, MATCH_STATE_EXIT);
                 
             match_enforce_rules(p1, p2, false, delta_time);
             
             fighter_update(p1, &p1->fighter, delta_time);
             fighter_update(p2, &p2->fighter, delta_time);
+            fighter_projectile_update(&p1->fighter, &p2->fighter, delta_time);
+            fighter_projectile_update(&p2->fighter, &p1->fighter, delta_time);
             
             break;
         }
@@ -277,16 +287,15 @@ void match_render(const match_t *match, renderer_t *renderer)
 
     #define X(name) (p1->fighter.state == STATE_##name) ? #name :  
         
-    //snprintf(buff, sizeof(buff), 
-    //    "\n\n\nHP,P1:%d           HP,P2:%d\n%s\nX:%.1f ATK_ID:%d\nATK_DUR:%.1f FRAM:%d", 
-    //    p1->fighter.hp, 
-    //    p2->fighter.hp,
-    //    FIGHTER_STATE_NAMES_XLIST "None",  
-    //    (double)p1->fighter.velocity_x,
-    //    p1->fighter.curr_attack_id,
-    //    (double)p1->fighter.state_duration,
-    //    p1->fighter.animation_frame
-    //);
+    snprintf(buff, sizeof(buff), 
+        "\n\n\nRB,P1:%d           RB,P2:%d\n%s\nATK_ID:%d\nATK_DUR:%.1f FRAM:%d", 
+        p1->fighter.ragebait_meter, 
+        p2->fighter.ragebait_meter,
+        FIGHTER_STATE_NAMES_XLIST "None",
+        p1->fighter.curr_attack_id,
+        (double)p1->fighter.state_duration,
+        p1->fighter.animation_frame
+    );
     #undef X
     
     renderer_draw_text(renderer, LAYER_UI1, (const char *)buff, 21, 21, 20, 20, COLOR_BLACK);
@@ -302,6 +311,15 @@ void match_render(const match_t *match, renderer_t *renderer)
     {
         renderer_draw_fighter(renderer, &p2->fighter);
         renderer_draw_fighter(renderer, &p1->fighter);
+    }
+    // projectile rendereing
+    for_range_i(lenghtof(p1->fighter.projectiles))
+    {
+        if (p1->fighter.projectiles[i].active)
+            renderer_draw_projectile(renderer, p1->fighter.texture, &p1->fighter.projectiles[i]);
+        
+        if (p2->fighter.projectiles[i].active)
+            renderer_draw_projectile(renderer, p2->fighter.texture, &p2->fighter.projectiles[i]);
     }
 }
 
@@ -417,9 +435,9 @@ static void draw_dbg_boxes(renderer_t *r, fighter_t *f, SDL_Color c)
         SDL_Rect hit = to_world_rect(f, col_f->hitboxs[i]);
         renderer_draw_rect(r, LAYER_UI1, &hit, COLOR_RED, false);
     }
-    SDL_Point p1 = {(int32_t)f->position_x, (int32_t)f->position_y}, 
-              p2 = {(int32_t)(f->position_x + (f->velocity_x * 0.16f)),
-                    (int32_t)(f->position_y + (f->velocity_y * 0.16f))};
+    SDL_Point p1 = {(int32_t)f->position.x, (int32_t)f->position.y}, 
+              p2 = {(int32_t)(f->position.x + (f->velocity.x * 0.16f)),
+                    (int32_t)(f->position.y + (f->velocity.y * 0.16f))};
 
     renderer_draw_line(r, LAYER_UI1, p1, p2, c);
 }

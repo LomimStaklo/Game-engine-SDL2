@@ -72,8 +72,8 @@ void machine_init(machine_t *machine, renderer_t *renderer, player_t *p1, player
     machine->curr_state = GAME_STATE_MENU;
     machine->next_state = GAME_STATE_MENU;
     
-    p1->fighter = character_get(renderer, CHARACTER_BOKE, 0);
-    p2->fighter = character_get(renderer, CHARACTER_BOKE, 1);
+    p1->fighter = character_get(renderer, CHARACTER_BOKE, 0.0f);
+    p2->fighter = character_get(renderer, CHARACTER_BOKE, 200.0f);
 
     match_textures_t texs = 
     {

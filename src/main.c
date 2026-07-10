@@ -14,10 +14,11 @@ void game_loop(void)
     {
         handle_SDL_events(&game);
         machine_update(&game.machine, game.time.target_frame_s);
+        
         game.time.accumulator -= game.time.target_frame_s;
     }
-
     machine_render(&game.machine, &game.renderer);
+
     return;
 }
 

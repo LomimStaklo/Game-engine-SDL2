@@ -178,7 +178,9 @@ void renderer_draw_text(
 );
 
 struct fighter_t;
+struct projectile_t;
 void renderer_draw_fighter(renderer_t *renderer, struct fighter_t *fighter);
+void renderer_draw_projectile(renderer_t *renderer, texture_handle_t owner_texture, struct projectile_t *proj);
 
 // ================
 //  IMPLEMENTATION
@@ -187,8 +189,8 @@ void renderer_draw_fighter(renderer_t *renderer, struct fighter_t *fighter);
 #ifdef RENDERER_IMPLEMENTATION
 
 #include <SDL2/SDL_image.h>
-#include "macros.h"
 #include <string.h>
+#include "macros.h"
 #include "fajter.h"
 
 #define WIN_FLAGS   (SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE /*| SDL_WINDOW_FULLSCREEN_DESKTOP*/)
@@ -704,6 +706,7 @@ void renderer_draw_text(
     renderer->command_count[layer] += 1;
 }
 
+// ---- FIGHTER -------------------------------------------------------------------------
 void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter)
 {   
     const anim_frame_t *frame = fighter_get_frame_data(fighter);
@@ -711,11 +714,11 @@ void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter)
     // Direction corection
     SDL_Rect dst; 
     if (fighter->facing_right) 
-        dst.x = (int32_t)fighter->position_x - frame->offset_x;
+        dst.x = (int32_t)fighter->position.x - frame->offset.x;
     else
-        dst.x = (int32_t)fighter->position_x - (frame->src.w - frame->offset_x);
+        dst.x = (int32_t)fighter->position.x - (frame->src.w - frame->offset.x);
 
-    dst.y = (int32_t)fighter->position_y - frame->offset_y;
+    dst.y = (int32_t)fighter->position.y - frame->offset.y;
     dst.w = frame->src.w; 
     dst.h = frame->src.h;
     
@@ -731,7 +734,7 @@ void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter)
     
     SDL_Rect shadow = dst;
     shadow.y = FLOOR_Y_LEVEL - 8;
-    shadow.h -= SDL_clamp((FLOOR_Y_LEVEL - (int32_t)fighter->position_y), 0, 40); 
+    shadow.h -= SDL_clamp((FLOOR_Y_LEVEL - (int32_t)fighter->position.y), 0, 40); 
     
     renderer_draw_texture_mod(
         renderer, 
@@ -742,6 +745,32 @@ void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter)
         180.0, 
         fighter->facing_right ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE,
         (SDL_Color){0, 0, 0, 128}
+    );
+}
+
+void renderer_draw_projectile(renderer_t *renderer, texture_handle_t owner_texture, projectile_t *proj)
+{
+    const anim_frame_t *frame = &proj->anim.frames[proj->anim_frame];
+
+    // Direction corection
+    SDL_Rect dst; 
+    if (proj->facing_right) 
+        dst.x = (int32_t)proj->position.x - frame->offset.x;
+    else
+        dst.x = (int32_t)proj->position.x - (frame->src.w - frame->offset.x);
+
+    dst.y = (int32_t)proj->position.y - frame->offset.y;
+    dst.w = frame->src.w; 
+    dst.h = frame->src.h;
+
+    renderer_draw_texture(
+        renderer, 
+        LAYER_ENTITY,
+        owner_texture, 
+        &frame->src,
+        &dst, 
+        0.0, 
+        proj->facing_right ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL
     );
 }
 

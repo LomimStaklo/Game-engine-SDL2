@@ -30,7 +30,7 @@ typedef enum character_name_t
  * \param name the character name
  * \param palette color palette of character, default is 0
  */
-fighter_t character_get(renderer_t *renderer, character_name_t name, uint32_t palette);
+fighter_t character_get(renderer_t *renderer, character_name_t name, float hue);
 
 // ================
 //  IMPLEMENTATION
@@ -38,6 +38,7 @@ fighter_t character_get(renderer_t *renderer, character_name_t name, uint32_t pa
 
 #ifdef CHARACTERS_IMPLEMENTATION
 #include <string.h>
+#include <math.h>
 #include "macros.h"
 
 #define ANIM(lp, total, ...) \
@@ -47,14 +48,14 @@ fighter_t character_get(renderer_t *renderer, character_name_t name, uint32_t pa
       .frame_count = (sizeof((anim_frame_t[]){__VA_ARGS__}) / sizeof(anim_frame_t)) }
 
 #define FRAME_HURT(src_r, tick, offx, offy, hx, hy, hw, hh) \
-    { .src = src_r, .ticks = (tick), .offset_x = (offx), .offset_y = (offy), \
+    { .src = src_r, .ticks = (tick), .offset.x = (offx), .offset.y = (offy), \
       .hurtboxs[0] = {(hx), (hy), (hw), (hh)}, .count_hurtboxs = 1 }
 
 #define FRAME_IMMUNE(src_r, tick, offx, offy) \
-    { .src = src_r, .ticks = (tick), .offset_x = (offx), .offset_y = (offy) }
+    { .src = src_r, .ticks = (tick), .offset.x = (offx), .offset.y = (offy) }
 
 #define FRAME_HIT(src_r, tick, offx, offy, hurtx, hurty, hurtw, hurth, hitx, hity, hitw, hith) \
-    { .src = src_r, .ticks = (tick), .offset_x = (offx), .offset_y = (offy), \
+    { .src = src_r, .ticks = (tick), .offset.x = (offx), .offset.y = (offy), \
       .hurtboxs[0] = {(hurtx), (hurty), (hurtw), (hurth)}, .count_hurtboxs = 1, \
       .hitboxs[0]  = {(hitx),  (hity),  (hitw),  (hith)},  .count_hitboxs  = 1 }
  
@@ -73,20 +74,100 @@ fighter_t character_get(renderer_t *renderer, character_name_t name, uint32_t pa
 
 static const fighter_t fajter_characters[CHARACTER_COUNT];
 
+typedef struct color_hsv_t
+{
+    float h; // Hue: 0.0 to 360.0 degrees
+    float s; // Saturation: 0.0 to 1.0
+    float v; // Value/Brightness: 0.0 to 1.0
+} color_hsv_t;
+
+static color_hsv_t RGB_to_HSV(SDL_Color col) 
+{
+    color_hsv_t hsv;
+    
+    // Normalize RGB values to 0.0 - 1.0 range
+    float r = col.r / 255.0f;
+    float g = col.g / 255.0f;
+    float b = col.b / 255.0f;
+
+    // Find the minimum and maximum values among R, G, B
+    float max = (r > g) ? ((r > b) ? r : b) : ((g > b) ? g : b);
+    float min = (r < g) ? ((r < b) ? r : b) : ((g < b) ? g : b);
+    float delta = max - min;
+
+    // 1. Calculate Value (Brightness)
+    hsv.v = max;
+
+    // 2. Calculate Saturation
+    if (max > 0.0f) {
+        hsv.s = delta / max;
+    } else {
+        // R = G = B = 0 (Black)
+        hsv.s = 0.0f;
+        hsv.h = 0.0f; 
+        return hsv;
+    }
+
+    // 3. Calculate Hue
+    if (delta == 0.0f) {
+        hsv.h = 0.0f; // Achromatic case (Gray, White)
+    } else {
+        if (is_in_range(r + 0.1f, r - 0.1f, max)) 
+        {
+            hsv.h = 60.0f * (g - b) / delta;
+        } else if (is_in_range(g + 0.1f, g - 0.1f, max)) 
+        {
+            hsv.h = 60.0f * (b - r) / delta + 120.0f;
+        } else {
+            hsv.h = 60.0f * (r - g) / delta + 240.0f;
+        }
+
+        // Keep hue positive within 0-360 range
+        if (hsv.h < 0.0f) hsv.h += 360.0f;
+    }
+
+    return hsv;
+}
+
+static SDL_Color HSV_to_RGB(color_hsv_t hsv) 
+{
+    float c = hsv.v * hsv.s;
+    float h_prime = (float)fmod((double)hsv.h / 60.0, 6.0);
+    float x = c * (float)(1.0 - fabs(fmod((double)h_prime, 2.0) - 1.0));
+    float m = hsv.v - c;
+
+    float r1 = 0, g1 = 0, b1 = 0;
+
+    if (h_prime >= 0 && h_prime < 1) { r1 = c; g1 = x; b1 = 0; }
+    else if (h_prime >= 1 && h_prime < 2) { r1 = x; g1 = c; b1 = 0; }
+    else if (h_prime >= 2 && h_prime < 3) { r1 = 0; g1 = c; b1 = x; }
+    else if (h_prime >= 3 && h_prime < 4) { r1 = 0; g1 = x; b1 = c; }
+    else if (h_prime >= 4 && h_prime < 5) { r1 = x; g1 = 0; b1 = c; }
+    else if (h_prime >= 5 && h_prime < 6) { r1 = c; g1 = 0; b1 = x; }
+
+    SDL_Color rgb;
+    rgb.r = (Uint8)((r1 + m) * 255);
+    rgb.g = (Uint8)((g1 + m) * 255);
+    rgb.b = (Uint8)((b1 + m) * 255);
+    rgb.a = 255; // Fully opaque
+
+    return rgb;
+}
+
 /**
  * This is a unreadable function that changes the palette of a fighter by looking at a 
  * specific place to find a palette to switch
  * \param surf surface of atlas
  * \param index_x x coordinate where the palette of 10 pixels is
- * \param palette the y coordinate that is 0 for default palette and 1, 2, 3... for other palettes
+ * \param hue the color hur of new palate 
  */
-static void character_switch_palette(SDL_Surface *surf, uint32_t index_x, uint32_t palette)
+static void character_switch_palette(SDL_Surface *surf, uint32_t index_x, float hue)
 {
     if (!surf) return;
 
     // Pitch = SCREEN_WIDTH * bytes-per-pixel
     uint32_t pixel_pitch = (uint32_t)surf->pitch / 4; 
-    uint32_t* pixels = (uint32_t *)surf->pixels;
+    uint32_t *pixels = (uint32_t *)surf->pixels;
     
     // New and default palette
     uint32_t def_pale[10] = {0};
@@ -95,11 +176,22 @@ static void character_switch_palette(SDL_Surface *surf, uint32_t index_x, uint32
     for_range_i(lenghtof(def_pale))
     {
         // index = (y * pixel_pitch) + x
-        def_pale[i] = pixels[(0 * pixel_pitch) + index_x]; 
-        new_pale[i] = pixels[(palette * pixel_pitch) + index_x]; 
-        index_x++;
+        def_pale[i] = pixels[(0 * pixel_pitch) + (index_x + i)]; 
+        
+        SDL_Color rgb;
+        SDL_GetRGBA(def_pale[i], surf->format, &rgb.r, &rgb.g, &rgb.b, &rgb.a);
+        
+        // Color is converted to hsv and saves the alpha 
+        color_hsv_t hsv = RGB_to_HSV(rgb);
+        uint8_t alpha = rgb.a;
+        
+        hsv.h = hue;
+        rgb = HSV_to_RGB(hsv); 
+
+        new_pale[i] = SDL_MapRGBA(surf->format, rgb.r, rgb.g, rgb.b, alpha); 
     }
 
+    // Here it applys the pallate to the surface 
     for (uint32_t y = 0; y < (uint32_t)surf->h; ++y) {
         for (uint32_t x = 0; x < (uint32_t)surf->w; ++x) {
         
@@ -132,17 +224,17 @@ static void character_switch_palette(SDL_Surface *surf, uint32_t index_x, uint32
     return;
 }
 
-fighter_t character_get(renderer_t *renderer, character_name_t name, uint32_t palette)
+fighter_t character_get(renderer_t *renderer, character_name_t name, float hue)
 {
     if (!is_in_range(0, CHARACTER_COUNT, (int32_t)name))
         name = CHARACTER_BOKE;
 
     fighter_t fg = fajter_characters[name];
 
-    if (palette > 0)
+    if (hue > 0.0f)
     {
         SDL_Surface *surf = asset_load_as_surface(fg.stat.default_asset);
-        character_switch_palette(surf, CHARACTER_X_COORDEINATE_FOR_PALETTE, palette);
+        character_switch_palette(surf, CHARACTER_X_COORDEINATE_FOR_PALETTE, hue);
         
         fg.texture = renderer_load_surface(renderer, surf, true);
     }
@@ -154,7 +246,8 @@ fighter_t character_get(renderer_t *renderer, character_name_t name, uint32_t pa
     fg.animation      = &fajter_characters[name].stat.animations[ANIM_IDLE];
     fg.animation_id   = ANIM_IDLE;
     fg.is_grounded    = true;
-    fg.last_hit_tick = -1;
+    fg.ragebait_meter = 100;
+    fg.last_hit_tick  = -1;
 
     return fg;
 }
@@ -262,10 +355,10 @@ static const fighter_t fajter_characters[CHARACTER_COUNT] =
                 .triger = ATK_TRIGGER_ON_HIT,
             },
 
-            .animations[ANIM_STAND_MEDIUM] = ANIM(false, TICKS(7 + 5 + 7),
-                FRAME_HURT(TILE_64x96(4), TICKS(7), 24, 88,  24, 12, 24, 72),
+            .animations[ANIM_STAND_MEDIUM] = ANIM(false, TICKS(6 + 5 + 7),
+                FRAME_HURT(TILE_64x96(4), TICKS(6), 24, 88,  24, 12, 24, 72),
                 FRAME_HIT (TILE_64x96(5), TICKS(5), 24, 88,   8, 12, 24, 72,  32, 24, 32, 24),
-                FRAME_HURT(TILE_64x96(5), TICKS(7), 24, 88,   8, 12, 24, 72),
+                FRAME_HURT(TILE_64x96(5), TICKS(6), 24, 88,   8, 12, 24, 72),
             ),
             .attacks[ATK_ID_STAND_MEDIUM] = 
             {
@@ -274,14 +367,14 @@ static const fighter_t fajter_characters[CHARACTER_COUNT] =
                 .knockback_x   = 20.0f, 
                 .recoil_x      = 150.0f,
 
-                .startup_ticks = TICKS(7),
+                .startup_ticks = TICKS(6),
                 .active_ticks = TICKS(5),
                 
                 .triger = ATK_TRIGGER_ON_HIT,
             },
 
-            .animations[ANIM_CROUCH_MEDIUM] = ANIM(false, TICKS(7 + 5 + 7),
-                FRAME_HURT(TILE_64x96(6), TICKS(7), 24, 88,   8, 48, 36, 36),
+            .animations[ANIM_CROUCH_MEDIUM] = ANIM(false, TICKS(6 + 5 + 7),
+                FRAME_HURT(TILE_64x96(6), TICKS(6), 24, 88,   8, 48, 36, 36),
                 FRAME_HIT (TILE_64x96(7), TICKS(5),  8, 88,   8, 48, 36, 36,  32, 56, 32, 8),
                 FRAME_HURT(TILE_64x96(7), TICKS(7),  8, 88,   8, 48, 36, 36),
             ),
@@ -292,7 +385,7 @@ static const fighter_t fajter_characters[CHARACTER_COUNT] =
                 .knockback_x   = 50.0f, 
                 .recoil_x      = 200.0f, 
 
-                .startup_ticks = TICKS(7),
+                .startup_ticks = TICKS(6),
                 .active_ticks = TICKS(5),
                 
                 .triger = ATK_TRIGGER_ON_HIT,
@@ -392,7 +485,7 @@ static const fighter_t fajter_characters[CHARACTER_COUNT] =
             {
                 .damage = 45, 
                 .stun_duration = TICKS(60),
-                .knockback_x = 100.0f, .knockback_y = -200.0f,
+                .knockback_x = 100.0f, .knockback_y = -500.0f,
                 
                 .startup_ticks = TICKS(10),
                 .active_ticks = TICKS(7),
@@ -416,7 +509,7 @@ static const fighter_t fajter_characters[CHARACTER_COUNT] =
             {
                 .damage = 5, 
                 .stun_duration = TICKS(30),
-                .knockback_x = 100.0f, .knockback_y = -500.0f,
+                .knockback_x = 100.0f, .knockback_y = -200.0f,
                 
                 .startup_ticks = TICKS(15),
                 .active_ticks = TICKS(6 * 8),
@@ -427,6 +520,28 @@ static const fighter_t fajter_characters[CHARACTER_COUNT] =
                 .flags  = ATK_FLAG_KNOCKDOWN | ATK_FLAG_MULTIHIT,
                 .sequence = {{INPUT_HOLDING_DOWN, INPUT_PRESSED_RIGHT, INPUT_PRESSED_MEDIUM}, 3}
             },
+
+            //.animations[ANIM_COMBO3] = ANIM(false, TICKS(),
+            //    FRAME_HURT(TILE_64x96(28), TICKS(5), 24, 88,  12, 12, 24, 72),   
+            //    FRAME_HURT(TILE_64x96(29), TICKS(5), 24, 88,  12, 12, 24, 72),   
+            //    FRAME_HURT(TILE_64x96(30), TICKS(5), 24, 88,  12, 12, 24, 72),   
+            //    FRAME_HURT(TILE_64x96(31), TICKS(5), 24, 88,  12, 12, 24, 72),   
+            //),
+            //.attacks[ATK_ID_COMBO3] = 
+            //{
+            //    .damage = 50, 
+            //    .stun_duration = TICKS(3),
+            //    .knockback_x = 100.0f,
+            //    
+            //    .startup_ticks = TICKS(3 * 5),
+            //    .active_ticks = TICKS(5),
+
+            //    .projectile = {.lifetime_ticks = TICKS(60), },
+
+            //    .triger = ATK_TRIGGER_ON_HIT,
+            //    .flags  = ATK_FLAG_PROJECTILE,
+            //    .sequence = {{INPUT_HOLDING_DOWN, INPUT_PRESSED_RIGHT, INPUT_PRESSED_MEDIUM}, 3}
+            //},
 
             // ---- SIZE 96x96 -------------------------------------------------
             .animations[ANIM_POSE_VICTORY] = ANIM(true, TICKS(15 + 45),

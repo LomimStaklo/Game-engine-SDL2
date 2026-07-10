@@ -2,17 +2,18 @@
 #include "nob.h"
 #include "src/assets.h"
 
-// ---- WINDOWS ----------------------------------
-#ifdef _WIN32
-#define EXECUTABLE_NAME "SKF.exe"    
 #define LIBS_DIR        "src/libs"
 #define INCLUDE_DIR     "src/include"
-#define PATH_SLASH      "\\"
 
-// ---- LINUX ------------------------------------
+// ---- WINDOWS ----------------------------------
+#ifdef _WIN32
+#define COMPILER        "gcc"
+#define EXECUTABLE_NAME "SKF.exe"    
+#define PATH_SLASH      "\\"
 #else 
-#define EXECUTABLE_NAME "SKF"   
-#define INCLUDE_DIR     "src/include"
+// ---- LINUX ------------------------------------
+#define COMPILER        "cc"
+#define EXECUTABLE_NAME "SKF"
 #define PATH_SLASH      "/"
 #endif
 
@@ -42,10 +43,10 @@ int main(int argc, char **argv)
     bool do_run          = false;
     bool do_static       = false;
     bool do_debug        = false;
-    bool do_assets_baked = false;          
-    
-    platform_t platform    = PLATFORM_NATIVE; 
-    const char *compiler = "gcc";
+    bool do_assets_baked = false;
+
+    platform_t platform  = PLATFORM_NATIVE; 
+    const char *compiler = COMPILER;
 
     // ---- USER ARGS -------------------------------------------------------------
     for (size_t i = 1; i < argc; i++)
@@ -58,17 +59,32 @@ int main(int argc, char **argv)
         if (strcmp(argv[i], "-platform") == 0)
         {
             const char *target_str = (i + 1) <= argc ? argv[i + 1] : "native";
-            
+
             if      (strcmp(target_str, "native") == 0) platform = PLATFORM_NATIVE;   
             else if (strcmp(target_str, "linux") == 0)  platform = PLATFORM_LINUX;   
             else if (strcmp(target_str, "win32") == 0)  platform = PLATFORM_WIN32;   
             else if (strcmp(target_str, "web") == 0)    platform = PLATFORM_WEB;
-            
+
             if (platform == PLATFORM_WEB) compiler = "emcc";
         }
 
         if (strcmp(argv[i], "-cc") == 0)
-            compiler = (i + 1) <= argc ? argv[i + 1] : "gcc";
+            compiler = (i + 1) <= argc ? argv[i + 1] : COMPILER;
+
+        if (strcmp(argv[i], "-help") == 0 || strcmp(argv[i], "--help") == 0)
+        {
+            printf( 
+                " -run                       Runs the executable when it gets compiled.\n"
+                " -assets-baked              Compiles the assets into the binary.\n"
+                " -platform <platform>       Target a platform (default: 'native'): 'win32', 'linux', 'web'.\n"
+                " -cc <compiler>             Change the compiler with the name of next argument.\n"
+                " -static                    Links the game statically instead of dynamically.\n"
+                " -dbg                       Compile with debug info.\n"
+                " -help, --help              Brings up this.\n\n"
+            );
+
+            return EXIT_SUCCESS;
+        }
     }
 
     // ---- ASSET BAKING ----------------------------------------------------------
@@ -130,7 +146,7 @@ int main(int argc, char **argv)
             nob_cmd_append(&cmd, "-I", INCLUDE_DIR);
             nob_cmd_append(&cmd, "src/main.c", "src/game.c");
             
-            // For Linux system libary of SDL2 is used no '-Wl,rpath' 
+            // For Linux system libary of SDL2 is used
             nob_cmd_append(&cmd, "-lSDL2", "-lSDL2_image", "-lm");
 
             if (do_static) 
@@ -185,9 +201,11 @@ int main(int argc, char **argv)
     }
     
     // ---- COMPILATION -----------------------------------------------------------
-    clock_t start = clock();
+    time_t start = time(NULL);
     if (!nob_cmd_run_sync(cmd)) return EXIT_FAILURE;
-    nob_log(NOB_INFO, "Comptime: %.2fs", (double)(clock() - start) / CLOCKS_PER_SEC);
+    time_t end = time(NULL);
+
+    nob_log(NOB_INFO, "Comptime: %d.0s", (int32_t)(end - start));
     
     // ---- RUN -------------------------------------------------------------------
     if (do_run)
@@ -293,7 +311,7 @@ bool make_baked_assets(const char *baked_file, const char **src_paths, size_t sr
         );
     }
 
-    for (int64_t i = (total_size - leftover_count); i < total_size; i++)
+    for (size_t i = (total_size - leftover_count); i < total_size; i++)
     {
         if (i == (total_size - leftover_count)) fprintf(fdst, "    "); 
         

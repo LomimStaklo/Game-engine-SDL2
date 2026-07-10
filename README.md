@@ -17,12 +17,6 @@
 > [!WARNING]
 > The game is still in development.
 
-## Features
-- *1 playable character* 
-- *2 playable stage* 
-
----
-
 ## Controls
 
 | Action | Player 1 | Player 2 |
@@ -53,7 +47,7 @@
 
 ## Build
 
-| Dependency | Is Required | Description |
+| Dependency | Required | Description |
 |---|---|---|
 | C compiler | *YES* | *gcc/clang*: Or any GUN compatibile compiler |
 | WASM C compiler | *NO* | *emcc*: Only for targeting web |
@@ -134,6 +128,8 @@ sudo emerge media-libs/libsdl2 media-libs/sdl2-image media-libs/sdl2-mixer
 nix-shell -p SDL2 SDL2_image SDL2_mixer
 ```
 
+After you installed dependenies you can just run *./nob -run* to compile the game again. 
+
 ### Web
 
 The web compilation requiers C compiler and a WASAM C compiler because of the run script.
@@ -155,8 +151,6 @@ If you are on Windows you can use backslash ".\\" instead of forward slash "./" 
 
 ---
 
-After you installed dependenies you can just run *./nob -run* to compile the game again. 
-
 ### Build options
 
 Scrpit has a few flags like:
@@ -165,7 +159,8 @@ Scrpit has a few flags like:
 - "-dbg" - Compile with debug info
 - "-cc" - Change the compiler with the name of next argument
 - "-assets-baked" - Compiles the assets into the binary 
-- "-platform" - Target a platform (default: "native"): "win32", "linux", "web"   
+- "-platform" - Target a platform (default: "native"): "win32", "linux", "web"
+- "-help", "--help" - Helps you    
 
 By default gcc is used but you can replace it with clang if you want.
 

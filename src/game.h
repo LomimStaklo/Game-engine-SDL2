@@ -4,6 +4,8 @@
 #include <SDL2/SDL.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
+
 #include "player.h"
 #include "renderer.h"
 #include "machine.h"
