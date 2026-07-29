@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "assets.h"
+#include "macros.h"
 
 // -------------
 //  DECLARATION
@@ -39,12 +40,13 @@ X(STAND_HEAVY) \
 X(CROUCH_LIGHT) \
 X(CROUCH_MEDIUM) \
 X(CROUCH_HEAVY) \
-X(DASH_FORWARD) \
-X(DASH_BACKWARD) \
 X(POSE_VICTORY) \
+X(POSE_DEFEAT) \
 X(COMBO1) \
 X(COMBO2) \
 X(COMBO3) \
+X(DASH_FORWARD) \
+X(DASH_BACKWARD) \
 X(SPECIAL1) \
 X(SPECIAL2) \
 // ---------------------------
@@ -59,39 +61,7 @@ X(SPECIAL2) \
  */
 #define TICKS(t) (t)
 
-// Vector implementation
-
-typedef struct vec2i_t { int32_t x, y; } vec2i_t;
-typedef struct vec2f_t { float x, y; }   vec2f_t;
-
-static inline vec2i_t vec2i_get(int32_t x, int32_t y) { vec2i_t v = {x, y}; return v; }
-static inline vec2f_t vec2f_get(float x, float y)     { vec2f_t v = {x, y}; return v; }
-
-#define vec2_add_eq(vec1, vec2) do { (vec1)->x += (vec2)->x; (vec1)->y += (vec2)->y; } while (0)
-#define vec2_sub_eq(vec1, vec2) do { (vec1)->x -= (vec2)->x; (vec1)->y -= (vec2)->y; } while (0)
-#define vec2_mul_eq(vec1, vec2) do { (vec1)->x *= (vec2)->x; (vec1)->y *= (vec2)->y; } while (0)
-#define vec2_div_eq(vec1, vec2) do { (vec1)->x /= (vec2)->x; (vec1)->y /= (vec2)->y; } while (0)
-
-#define vec2_add(vec1, vec2) { (vec1)->x + (vec2)->x, (vec1)->y + (vec2)->y }
-#define vec2_sub(vec1, vec2) { (vec1)->x - (vec2)->x, (vec1)->y - (vec2)->y }
-#define vec2_mul(vec1, vec2) { (vec1)->x * (vec2)->x, (vec1)->y * (vec2)->y }
-#define vec2_div(vec1, vec2) { (vec1)->x / (vec2)->x, (vec1)->y / (vec2)->y }
-
-#define vec2_add_scal(vec1, scalor) { (vec1)->x + (scalor), (vec1)->y + (scalor) }
-#define vec2_sub_scal(vec1, scalor) { (vec1)->x - (scalor), (vec1)->y - (scalor) }
-#define vec2_mul_scal(vec1, scalor) { (vec1)->x * (scalor), (vec1)->y * (scalor) }
-#define vec2_div_scal(vec1, scalor) { (vec1)->x / (scalor), (vec1)->y / (scalor) }
-
-// Animation type is prefixed with ANIM_
-typedef enum animation_id_t 
-{
-#define X(name) ANIM_ ## name,
-    FIGHTER_STATE_NAMES_XLIST
-    ANIM_COUNT
-#undef X
-} animation_id_t;
-
-typedef struct anim_frame_t
+typedef struct frame_t
 {
     // Frame tile rect from the atlas
     SDL_Rect src;
@@ -101,16 +71,26 @@ typedef struct anim_frame_t
 
     // Collision
     uint8_t  count_hitboxs, count_hurtboxs;
-    SDL_Rect hitboxs[4],    hurtboxs[4];
-} anim_frame_t;
+    SDL_Rect hitboxs[2],    hurtboxs[2];
+} frame_t;
 
-typedef struct animation_t
+typedef struct animation_def_t
 {
-    anim_frame_t frames[10];
+    frame_t frames[10];
     int32_t frame_count;
     int32_t total_ticks;
     bool loop;
-} animation_t;  
+} animation_def_t;  
+
+typedef struct animation_t
+{
+    const animation_def_t *animations; // Pointer to array of anims
+    int32_t id;     // Index in animations array of current animation 
+    int32_t texture;
+    int32_t duration;
+    uint16_t timer;  // current tick animation is on
+    uint16_t frame; // current frame of animation is on
+} animation_t;
 
 typedef struct input_sequence_t 
 {
@@ -132,100 +112,113 @@ typedef enum attack_id_t
     ATK_ID_COMBO1,
     ATK_ID_COMBO2,
     ATK_ID_COMBO3,
+    ATK_ID_DASH_FORWARD,
+    ATK_ID_DASH_BACKWARDS,
     ATK_ID_SPECIAL1, 
     ATK_ID_SPECIAL2,
     ATK_ID_COUNT
 } attack_id_t;
 
-typedef struct pysics_t 
+typedef struct pysics_t
 {
     vec2f_t position;
     vec2f_t velocity;
-} pysics_t;
-
-// void pysics_update(pysics_t *object);
-
-typedef struct projectile_t
-{
-    animation_t anim;
-    int32_t anim_frame;
-    attack_id_t attack_id;
-    int32_t spawn_tick; // When the projectile spawns
-    
-    vec2f_t spawn_offset; // Spawns ant player position
-    vec2f_t position;
-    vec2f_t velocity;
-    
-    SDL_Rect hitbox;
-
-    int32_t lifetime_ticks; // how many ticks before it disappears even if no hit
-    int32_t timer_ticks;    // counts up, destroyed when >= lifetime_ticks
-    int32_t last_hit_tick;  // same as fighter, prevents double-hit
     bool facing_right;
-    
-    bool active;
-} projectile_t;
+    bool is_grounded;
+} pysics_t;
 
 typedef enum attack_trigger_t
 {
     ATK_TRIGGER_ON_HIT = 0, // Default, func fires when attack connects
     ATK_TRIGGER_ON_COUNTER, // Fires only if enemy is in a hittable/attack state
-    ATK_TRIGGER_ON_WHIFF,   // Fires when attack ends without hitting
+    ATK_TRIGGER_IN_RANGE,   // Fires if enemy gets in attack->range 
 } attack_trigger_t;
 
 typedef enum attack_flags_t
 {
     ATK_FLAG_NONE                 = 0,
     ATK_FLAG_ARMOR                = 1 << 0, // Absorbs a hit during startup
-    ATK_FLAG_GRAB                 = 1 << 1, // Unblockable, uses grab detection
-    ATK_FLAG_PROJECTILE           = 1 << 2, // Spawns a separate hitbox entity
-    ATK_FLAG_KNOCKDOWN            = 1 << 3, 
-    ATK_FLAG_WALL_BOUNCE          = 1 << 4, 
-    ATK_FLAG_CANT_BLOCK_STANDING  = 1 << 5, // Unblockable when standing
-    ATK_FLAG_CANT_BLOCK_CROUCHING = 1 << 6, // Unblockable when crouching
-    ATK_FLAG_CANCEABLE            = 1 << 7, // Move can be canceled
-    ATK_FLAG_MULTIHIT             = 1 << 8, // apply full knockback/stun only on last active frame
+    ATK_FLAG_CANCEABLE            = 1 << 1, // Unblockable, uses grab detection
+    ATK_FLAG_KNOCKDOWN            = 1 << 2, 
+    ATK_FLAG_WALL_BOUNCE          = 1 << 3, 
+    ATK_FLAG_CANT_BLOCK_STANDING  = 1 << 4, // Unblockable when standing
+    ATK_FLAG_CANT_BLOCK_CROUCHING = 1 << 5, // Unblockable when crouching
 } attack_flags_t;
+
+typedef enum attack_kind_t
+{
+    ATK_KIND_SIMPLE = 0,
+    ATK_KIND_GRAB,
+    ATK_KIND_DASH,
+    ATK_KIND_MULTIHIT,
+    ATK_KIND_PROJECTILE,
+} attack_kind_t;
+
+typedef struct attack_simple_t
+{
+    int32_t damage;                    
+    vec2f_t knockback;  // Push force on enemy    (pull if negative)
+    vec2f_t recoil;     // Push force on attacker (forward launch if negative)
+    int32_t stun_duration, hitstop;
+    attack_flags_t flags;
+    // If .func == NULL then stats above are applyed
+    bool (*func)(struct fighter_t *atk, struct fighter_t *def, void *ctx);
+} attack_simple_t;
+
+typedef struct projectile_def_t
+{
+    animation_def_t anim;
+    vec2f_t spawn_offset; // Spawns ant player position
+        
+    SDL_Rect hitbox;
+    int32_t lifetime; // How many ticks before it disappears even if no hit
+} projectile_def_t;
 
 // TODO: add a passiv effect system 
 typedef struct attack_t
 {
-    int32_t damage;                    
-    float knockback_x, knockback_y;  // Push force on enemy    (pull if negative)
-    float recoil_x, recoil_y;        // Push force on attacker (forward launch if negative)
-    int32_t stun_duration;           // Duration of an attack and its stun effect on enemy
-    
-    // Used for window
-    uint8_t startup_ticks, active_ticks; 
-    
-    attack_trigger_t triger;
-    attack_flags_t flags;
-    
-    uint8_t multihit_interval; // Used only for multihit attacks
-    projectile_t projectile;
-    
-    // If func is NULL than it isnt executed
-    void (*func)(struct fighter_t *atk, struct fighter_t *def, void *ctx);
     input_sequence_t sequence;
+    attack_kind_t kind;
+    attack_trigger_t triger;
+
+    projectile_def_t projectile;
+    attack_simple_t stats;     // Used for all attacks
+    uint8_t multihit_interval; // Used for multihit attacks
+    float range;           // Used for ATK_TRIGGER_IN_RANGE
+    vec2f_t grab_offset;   // Used for teleporting enemy into a grab
+    uint8_t grab_duration; // How long the grab lasts
+    // TODO: this funcker doesnt want to work vec2f_t boost;
+    
+    uint8_t startup, active; // Used for attack window
 } attack_t;
 
-typedef enum fighter_state_t
+typedef enum fighter_state_id_t
 {
 #define X(name) STATE_ ## name,
     FIGHTER_STATE_NAMES_XLIST
     STATE_COUNT
 #undef X
-} fighter_state_t;
+} fighter_state_id_t;
 
 typedef struct state_def_t
 {
-    animation_id_t anim;          // What animation this state plays
     attack_id_t    attack;        // ATK_ID_NONE if not an attack state
     uint16_t       can_do;
 } state_def_t;
 
-typedef struct fighter_stats_t
+typedef struct fighter_state_t
 {
+    int32_t id;     // Current state id
+    int32_t timer;    // How long has state been running 
+    int32_t duration; // if 0 then state stays forever  
+} fighter_state_t;
+
+
+typedef struct fighter_def_t
+{
+    animation_def_t animations[STATE_COUNT];
+    attack_t attacks[ATK_ID_COUNT];
+
     const char *name;
     asset_name_t default_asset;
     
@@ -233,57 +226,61 @@ typedef struct fighter_stats_t
     float jump_force;
     float walk_speed;
     
-    animation_t animations[ANIM_COUNT];
-    attack_t attacks[ATK_ID_COUNT];
-} fighter_stats_t;
+} fighter_def_t;
 
 typedef struct fighter_t
 {
-    fighter_stats_t stat; // Fighter definition
-    int32_t texture;
-        
-    fighter_state_t state;  // Current state
-    int32_t state_timer;    // How long has state been running 
-    int32_t state_duration; // if 0 then state stays forever  
+    const fighter_def_t *def; // Fighter definition
+    
+    animation_t animation;
+    
+    pysics_t pysics;
+    fighter_state_t state;
+    //projectile_t projectiles[10];
+    
+    attack_id_t curr_attack_id;   // Current attack
+    int32_t hit_landed_at;
     
     int32_t hp;
     uint32_t ragebait_meter;
-    attack_id_t curr_attack_id;   // Current attack
-    
-    projectile_t projectiles[10];
-    
-    vec2f_t position;
-    vec2f_t velocity;
-    
-    int32_t active_stun_duration;   // Set by apply_hit, read in STATE_STAND_HITSTUN
-
-    bool facing_right;
-    bool is_grounded;
-    int32_t last_hit_tick;
-
-    const animation_t *animation;       // Current animation
-    animation_id_t     animation_id;    // Same animation 
-    int32_t            animation_tick;   
-    int32_t            animation_frame; // At what frame is the animation currently on
+    int32_t active_stun;   // Set by apply_hit, read in STATE_STAND_HITSTUN
 } fighter_t;
 
 void fighter_update_attack(fighter_t *atk, fighter_t *def, void *ctx);
-void fighter_set_state(fighter_t *fighter, fighter_state_t next_state);
-void fighter_update(struct player_t *player, fighter_t *fighter, float delta_time);
+void fighter_set_state(fighter_t *fighter, fighter_state_id_t next_state);
+void fighter_update(struct player_t *player, fighter_t *fighter, float delta_time, int32_t floor_level);
 
-const anim_frame_t *fighter_get_frame_data(fighter_t *fighter);
 SDL_Rect to_world_rect(fighter_t *fighter, SDL_Rect local);
 float fighter_check_overlap(fighter_t *f1, fighter_t *f2);
-void fighter_projectile_update(fighter_t *owner, fighter_t *def, float delta_time);
 
-// ----------------
-//  IMPLEMENTATION
-// ----------------
+// --------------------------------------
+void pysics_update(pysics_t *object, float delta_time, int32_t timer, int32_t floor_level);
+void pysics_facing_direction(pysics_t *obj1, pysics_t *obj2);
+void animation_update(animation_t *anim);
+void animation_change(animation_t *anim, int32_t next_anim, bool restart);
+const frame_t *animation_get_frame(animation_t *anim);
+SDL_Rect frame_rect_facing_position(const frame_t *frame, pysics_t *pysics);
+// -------------------------------------- 
 
+/* typedef struct fighter_state_defs_t_
+{
+    anims[STATE_COUNT];
+    can_do[STATE_COUNT];
+    attacks[ATK_ID_COUNT];
+};
+
+typedef struct state_t_
+{
+    
+}; */
+    
+// ---- IMPLEMENTATION -----------------------
 #ifdef FAJTER_IMPLEMENTATION
 
-#include "player.h"
 #include <stdio.h>
+#include <math.h>
+#include "player.h"
+#include "match.h"
 
 static void fighter_update_animation(fighter_t *fighter);
 
@@ -305,140 +302,219 @@ enum what_can_state_do_t {
 
 static const state_def_t state_defs[STATE_COUNT] = 
 {
-    [STATE_IDLE]          = {ANIM_IDLE,          ATK_ID_NONE, CAN_EVERYTHING},
-    [STATE_POSE_VICTORY]  = {ANIM_POSE_VICTORY,  ATK_ID_NONE, CAN_EVERYTHING},
-    [STATE_WALK_FORWARD]  = {ANIM_WALK_FORWARD,  ATK_ID_NONE, CAN_EVERYTHING},
-    [STATE_WALK_BACKWARD] = {ANIM_WALK_BACKWARD, ATK_ID_NONE, CAN_EVERYTHING},
-    [STATE_AIRBORNE]      = {ANIM_AIRBORNE,      ATK_ID_NONE, CAN_ATK | CAN_COMBO},
-    [STATE_AIRBORNE_ATK]  = {ANIM_AIRBORNE_ATK,  ATK_ID_AIRBORNE_ATK, CAN_COMBO},
+    [STATE_IDLE]          = {ATK_ID_NONE, CAN_EVERYTHING},
+    [STATE_POSE_VICTORY]  = {ATK_ID_NONE, CAN_EVERYTHING},
+    [STATE_POSE_DEFEAT]   = {ATK_ID_NONE, CAN_EVERYTHING},
+    [STATE_WALK_FORWARD]  = {ATK_ID_NONE, CAN_EVERYTHING},
+    [STATE_WALK_BACKWARD] = {ATK_ID_NONE, CAN_EVERYTHING},
+    [STATE_AIRBORNE]      = {ATK_ID_NONE, CAN_ATK | CAN_COMBO},
+    [STATE_AIRBORNE_ATK]  = {ATK_ID_AIRBORNE_ATK, CAN_COMBO},
 
-    [STATE_CROUCH]        = {ANIM_CROUCH,       ATK_ID_NONE, CAN_ATK | CAN_BLOCK | CAN_CROUCH | CAN_COMBO | CAN_DASH},
-    [STATE_STAND_BLOCK]   = {ANIM_STAND_BLOCK,  ATK_ID_NONE, CAN_ATK | CAN_BLOCK | CAN_CROUCH | CAN_COMBO | CAN_DASH},
-    [STATE_CROUCH_BLOCK]  = {ANIM_CROUCH_BLOCK, ATK_ID_NONE, CAN_ATK | CAN_BLOCK | CAN_CROUCH | CAN_COMBO | CAN_DASH},
+    [STATE_CROUCH]        = {ATK_ID_NONE, CAN_ATK | CAN_BLOCK | CAN_CROUCH | CAN_COMBO | CAN_DASH},
+    [STATE_STAND_BLOCK]   = {ATK_ID_NONE, CAN_ATK | CAN_BLOCK | CAN_CROUCH | CAN_COMBO | CAN_DASH},
+    [STATE_CROUCH_BLOCK]  = {ATK_ID_NONE, CAN_ATK | CAN_BLOCK | CAN_CROUCH | CAN_COMBO | CAN_DASH},
 
-    [STATE_STAND_LIGHT]   = {ANIM_STAND_LIGHT,   ATK_ID_STAND_LIGHT,   CAN_ATK_MEDIUM | CAN_ATK_HEAVY | CAN_COMBO},
-    [STATE_STAND_MEDIUM]  = {ANIM_STAND_MEDIUM,  ATK_ID_STAND_MEDIUM,  CAN_ATK_HEAVY | CAN_COMBO},
-    [STATE_STAND_HEAVY]   = {ANIM_STAND_HEAVY,   ATK_ID_STAND_HEAVY,   CAN_COMBO},
-    [STATE_CROUCH_LIGHT]  = {ANIM_CROUCH_LIGHT,  ATK_ID_CROUCH_LIGHT,  CAN_ATK_MEDIUM | CAN_ATK_HEAVY | CAN_COMBO},
-    [STATE_CROUCH_MEDIUM] = {ANIM_CROUCH_MEDIUM, ATK_ID_CROUCH_MEDIUM, CAN_ATK_HEAVY | CAN_COMBO},
-    [STATE_CROUCH_HEAVY]  = {ANIM_CROUCH_HEAVY,  ATK_ID_CROUCH_HEAVY,  CAN_COMBO},
+    [STATE_STAND_LIGHT]   = {ATK_ID_STAND_LIGHT,   CAN_ATK_MEDIUM | CAN_ATK_HEAVY | CAN_COMBO},
+    [STATE_STAND_MEDIUM]  = {ATK_ID_STAND_MEDIUM,  CAN_ATK_HEAVY | CAN_COMBO},
+    [STATE_STAND_HEAVY]   = {ATK_ID_STAND_HEAVY,   CAN_COMBO},
+    [STATE_CROUCH_LIGHT]  = {ATK_ID_CROUCH_LIGHT,  CAN_ATK_MEDIUM | CAN_ATK_HEAVY | CAN_COMBO},
+    [STATE_CROUCH_MEDIUM] = {ATK_ID_CROUCH_MEDIUM, CAN_ATK_HEAVY | CAN_COMBO},
+    [STATE_CROUCH_HEAVY]  = {ATK_ID_CROUCH_HEAVY,  CAN_COMBO},
 
-    [STATE_DASH_FORWARD]  = {ANIM_DASH_FORWARD,  ATK_ID_NONE, CAN_JUMP | CAN_ATK | CAN_COMBO},     
-    [STATE_DASH_BACKWARD] = {ANIM_DASH_BACKWARD, ATK_ID_NONE, CAN_JUMP | CAN_ATK | CAN_COMBO}, 
+    [STATE_DASH_FORWARD]  = {ATK_ID_DASH_FORWARD, CAN_JUMP | CAN_ATK | CAN_COMBO},     
+    [STATE_DASH_BACKWARD] = {ATK_ID_DASH_BACKWARDS, CAN_JUMP | CAN_ATK | CAN_COMBO}, 
     
-    [STATE_COMBO1]        = {ANIM_COMBO1, ATK_ID_COMBO1, CAN_NOTHING},
-    [STATE_COMBO2]        = {ANIM_COMBO2, ATK_ID_COMBO2, CAN_NOTHING},
-    [STATE_COMBO3]        = {ANIM_COMBO3, ATK_ID_COMBO3, CAN_NOTHING},
+    [STATE_COMBO1]        = {ATK_ID_COMBO1, CAN_NOTHING},
+    [STATE_COMBO2]        = {ATK_ID_COMBO2, CAN_NOTHING},
+    [STATE_COMBO3]        = {ATK_ID_COMBO3, CAN_NOTHING},
 
-    [STATE_SPECIAL1]      = {ANIM_SPECIAL1, ATK_ID_SPECIAL1, CAN_NOTHING},
-    [STATE_SPECIAL2]      = {ANIM_SPECIAL2, ATK_ID_SPECIAL2, CAN_NOTHING},
+    [STATE_SPECIAL1]      = {ATK_ID_SPECIAL1, CAN_NOTHING},
+    [STATE_SPECIAL2]      = {ATK_ID_SPECIAL2, CAN_NOTHING},
 
-    [STATE_STAND_HITSTUN]    = {ANIM_STAND_HITSTUN, ATK_ID_NONE, CAN_NOTHING},
-    [STATE_CROUCH_HITSTUN]   = {ANIM_CROUCH_HITSTUN, ATK_ID_NONE, CAN_NOTHING},
-    [STATE_AIRBORNE_HITSTUN] = {ANIM_AIRBORNE_HITSTUN, ATK_ID_NONE, CAN_NOTHING},
-    [STATE_KNOCKDOWN]        = {ANIM_KNOCKDOWN, ATK_ID_NONE, CAN_NOTHING},
-    [STATE_RECOVERY]         = {ANIM_RECOVERY, ATK_ID_NONE, CAN_ATK | CAN_COMBO},
+    [STATE_STAND_HITSTUN]    = {ATK_ID_NONE, CAN_NOTHING},
+    [STATE_CROUCH_HITSTUN]   = {ATK_ID_NONE, CAN_NOTHING},
+    [STATE_AIRBORNE_HITSTUN] = {ATK_ID_NONE, CAN_NOTHING},
+    [STATE_KNOCKDOWN]        = {ATK_ID_NONE, CAN_NOTHING},
+    [STATE_RECOVERY]         = {ATK_ID_NONE, CAN_ATK | CAN_COMBO},
 };
 
 // ---- FORCE CLACULATION -----------------------------------------
 #define FORCE_GRAVITY  900.0f // Units/sec^2 fall rate
-#define FORCE_FRICTION 0.85f  // 0 == Instatnt stop, 1 == No stop
-#define FLOOR_Y_LEVEL  (SCREEN_HEIGHT - 30)  
+#define FORCE_FRICTION 0.90f  // 0 == Instatnt stop, 1 == No stop
 
 static float force_linear(float base, float rate, float time)
 {
-    return base + (rate * time);
+    return (rate * time) + base;
 }
 
-static inline bool is_fighter_airborn(fighter_t *f)
+static inline bool is_fighter_airborn(fighter_t *fighter)
 {
     return (
-        f->state == STATE_AIRBORNE || 
-        f->state == STATE_AIRBORNE_ATK || 
-        f->state == STATE_AIRBORNE_HITSTUN || 
-        f->state == STATE_KNOCKDOWN);
+        fighter->state.id == STATE_AIRBORNE  || fighter->state.id == STATE_AIRBORNE_ATK || 
+        fighter->state.id == STATE_KNOCKDOWN || fighter->state.id == STATE_AIRBORNE_HITSTUN
+    ); 
 }
 static inline bool is_fighter_crouching(fighter_t *fighter)
 {
-    return (fighter->state == STATE_CROUCH       || fighter->state == STATE_CROUCH_BLOCK  || 
-            fighter->state == STATE_CROUCH_LIGHT || fighter->state == STATE_CROUCH_MEDIUM ||
-            fighter->state == STATE_CROUCH_HEAVY || fighter->state == STATE_CROUCH_HITSTUN);
+    return (
+        fighter->state.id == STATE_CROUCH       || fighter->state.id == STATE_CROUCH_BLOCK  || 
+        fighter->state.id == STATE_CROUCH_LIGHT || fighter->state.id == STATE_CROUCH_MEDIUM ||
+        fighter->state.id == STATE_CROUCH_HEAVY || fighter->state.id == STATE_CROUCH_HITSTUN
+    );
+}
+static inline bool is_fighter_stuned(fighter_t *fighter)
+{
+    return (
+        fighter->state.id == STATE_STAND_HITSTUN    || fighter->state.id == STATE_CROUCH_HITSTUN ||
+        fighter->state.id == STATE_AIRBORNE_HITSTUN || fighter->state.id == STATE_KNOCKDOWN 
+    );
+}  
+static inline bool is_fighter_immune(fighter_t *fighter)
+{
+    return (
+        fighter->state.id == STATE_KNOCKDOWN || fighter->state.id == STATE_RECOVERY
+    );
 }
 
+void pysics_update(pysics_t *object, float delta_time, int32_t timer, int32_t floor_level)
+{
+    // Actuall moving 
+    vec2f_t velocity = vec2f_mul(object->velocity, vec2f(delta_time, delta_time));
+    object->position = vec2f_add(object->position, velocity); // Applay velocity
+    
+    object->is_grounded = (object->position.y >= (float)floor_level) 
+        ? true
+        : false;
+    
+    if (!object->is_grounded) 
+    {
+        float grav = force_linear(FORCE_GRAVITY, 80.0f, (float)timer * delta_time);
+        object->velocity.y += grav * delta_time; // Gravity 
+    } else
+    {
+        object->position.y = (float)floor_level;
+        object->velocity.y = 0.0f;
+        object->velocity.x *= FORCE_FRICTION; // Slides to stop
+    } 
+}
+
+
+void pysics_facing_direction(pysics_t *obj1, pysics_t *obj2)
+{
+    obj1->facing_right = (obj1->position.x < obj2->position.x)
+        ? true 
+        : false;
+    obj2->facing_right = !obj1->facing_right;
+}
+
+static int32_t animation_def_total_ticks(const animation_def_t *anim)
+{
+    int32_t ticks = 0;
+    for_range_i((unsigned)anim->frame_count)
+        ticks += anim->frames[i].ticks;
+    return ticks;
+}
+
+void animation_update(animation_t *anim)
+{
+    anim->timer++;
+    
+    const animation_def_t *curr = &anim->animations[anim->id];
+    int32_t frame_timestamp = 0;
+    
+    for_range_i(anim->frame + 1)
+        frame_timestamp += curr->frames[i].ticks;
+
+    if (anim->timer >= frame_timestamp)
+    {
+        anim->frame++;
+        
+        if (anim->frame >= curr->frame_count)
+        {    
+            anim->frame =
+                (curr->loop) ? 0 : (uint16_t)curr->frame_count - 1;
+            anim->timer =
+                (curr->loop) ? 0 : (uint16_t)animation_def_total_ticks(curr) - 1;
+        }
+    }
+}
+
+void animation_change(animation_t *anim, int32_t next_anim, bool restart)
+{
+    if (anim->id != next_anim) 
+    {
+        anim->id = next_anim;
+        anim->timer = TICKS(0);
+        
+        anim->frame = (restart) ? 0 : (uint16_t)anim->animations[anim->id].frame_count - 1;
+        anim->timer = (restart) ? TICKS(0) : (uint16_t)animation_def_total_ticks(&anim->animations[anim->id]) - 1;
+    }
+}
 // Resets fighter->state_timer to 0
-void fighter_set_state(fighter_t *fighter, fighter_state_t next_state)
+void fighter_set_state(fighter_t *fighter, fighter_state_id_t next_state)
 {
     attack_id_t next_atk_id = state_defs[next_state].attack;
 
     // If next state is an attack 
     if (next_atk_id != ATK_ID_NONE)
     {
-        const attack_t *attack = &fighter->stat.attacks[fighter->curr_attack_id];
-        
         // Canceable attack must be in recovery state
         if (fighter->curr_attack_id != ATK_ID_NONE)
         {
+            const attack_t *attack = &fighter->def->attacks[fighter->curr_attack_id];
+
             bool canceable = (
                 (fighter->curr_attack_id != next_atk_id) &&
-                (attack->flags & ATK_FLAG_CANCEABLE) && 
-                (fighter->state_timer >= attack->startup_ticks + attack->active_ticks)
+                (attack->stats.flags & ATK_FLAG_CANCEABLE) && 
+                (fighter->state.timer >= attack->startup)
             );
             if (!canceable) return;
         }
-        // For now the duration is messured by amount of frames
-        const animation_t *anim = &fighter->stat.animations[state_defs[next_state].anim];
-
-        fighter->curr_attack_id = next_atk_id;
-        fighter->state_duration = anim->total_ticks;
-        fighter->last_hit_tick = -1;
-
-        fighter->state = next_state;
-        fighter->state_timer = TICKS(0);
-    
-        return;
     }
     
-    fighter->last_hit_tick = TICKS(-1);
-    fighter->state_duration = TICKS(0);
-    fighter->curr_attack_id = ATK_ID_NONE;
+    fighter->state.duration = (next_atk_id == ATK_ID_NONE) 
+        ? 0 
+        : fighter->def->animations[next_state].total_ticks;
+    
+    // TODO: Fix the game  
+    if (next_state == STATE_RECOVERY) 
+        fighter->state.duration = fighter->def->animations[next_state].total_ticks;
 
-    fighter->state = next_state;
-    fighter->state_timer = TICKS(0);
+    fighter->state.id       = (int32_t)next_state;
+    fighter->curr_attack_id = next_atk_id;
+    fighter->hit_landed_at  = TICKS(-1);
+    fighter->state.timer    = TICKS(0);
 }   
 
-void fighter_update(player_t *player, fighter_t *fighter, float delta_time)
+void fighter_update(player_t *player, fighter_t *fighter, float delta_time, int32_t floor_level)
 {
-    fighter->state_timer++;
+    fighter->state.timer++;
     
     // ---- PHYSICS -----------------------------------------------
-    if (!fighter->is_grounded) 
+    pysics_update(&fighter->pysics, delta_time, fighter->state.timer, floor_level);
+
+    if (fighter->pysics.is_grounded) 
     {
+        if (fighter->state.id == STATE_AIRBORNE || fighter->state.id == STATE_AIRBORNE_ATK) 
+            fighter_set_state(fighter, STATE_IDLE);
+    } else
+    {    
         if (!is_fighter_airborn(fighter))            
             fighter_set_state(fighter, STATE_AIRBORNE);
-
-        const float grav = force_linear(FORCE_GRAVITY, 80.0f, (float)fighter->state_timer * delta_time);
-        fighter->velocity.y += grav * delta_time; // Gravity 
-    } else
-        fighter->velocity.x *= FORCE_FRICTION; // Slides to stop
-
-    vec2f_t vel = {delta_time, delta_time};
-    vec2_mul_eq(&vel, &fighter->velocity);
-    vec2_add_eq(&fighter->position, &vel); // Applay velocity
-
-    if (fighter->position.y >= (float)FLOOR_Y_LEVEL) 
-    {
-        fighter->position.y = (float)FLOOR_Y_LEVEL;
-        fighter->velocity.y = 0.0f;
-        fighter->is_grounded = true;
-        if (fighter->state == STATE_AIRBORNE || fighter->state == STATE_AIRBORNE_ATK) 
-            fighter_set_state(fighter, STATE_IDLE);
     }
-    else
-        fighter->is_grounded = false;
 
     const input_actions_t input = player_get_input(player);     // Current player input
-    const input_actions_t swaped_input = input_left_right_swap(fighter->facing_right, input); 
-    const uint16_t can_fighter_do = state_defs[fighter->state].can_do; // What state is alowed to do
+    const input_actions_t swaped_input = input_left_right_swap(fighter->pysics.facing_right, input); 
+    const uint16_t can_fighter_do = state_defs[fighter->state.id].can_do; // What state is alowed to do
+
+    // ---- JUMP ------------------------------------------------------------------------
+    if (can_fighter_do & CAN_JUMP && input & INPUT_PRESSED_UP)
+    {
+        // Jump force is positive stat number so it gets negated here
+        fighter->pysics.velocity.y  = -fighter->def->jump_force; 
+        fighter->pysics.is_grounded = false;
+        fighter_set_state(fighter, STATE_AIRBORNE);
+    }
 
     // ---- COMBO -----------------------------------------------------------------------
     // Starting form STATE_COMBO1 -> STATE_COUNT all attacks are combos
@@ -448,10 +524,15 @@ void fighter_update(player_t *player, fighter_t *fighter, float delta_time)
         for (uint32_t state = STATE_COMBO1; state < STATE_COUNT; state++)
         {
             attack_id_t combo_id = state_defs[state].attack;
-            if (combo_id == ATK_ID_NONE) continue; 
-            if (player_check_combo(player, &fighter->stat.attacks[combo_id].sequence))
+            assert(combo_id != ATK_ID_NONE && "You didnt acount for state_defs");
+
+            if ((combo_id == ATK_ID_DASH_BACKWARDS || 
+                combo_id == ATK_ID_DASH_FORWARD) &&
+                (!(can_fighter_do & CAN_DASH))
+            ) continue;
+
+            if (player_check_combo(player, &fighter->def->attacks[combo_id].sequence))
             {
-                //assert(false && "TODO: Make ATK_FLAG_GRAB");
                 fighter_set_state(fighter, state);
                 goto state_machine;
             }
@@ -460,7 +541,7 @@ void fighter_update(player_t *player, fighter_t *fighter, float delta_time)
 
     // TODO: fix the mess with some kind on switch statement
     // Grounded states check (I know its a big if)
-    if (fighter->is_grounded)
+    if (fighter->pysics.is_grounded)
     {
         const bool crouching = is_fighter_crouching(fighter);
         
@@ -500,13 +581,6 @@ void fighter_update(player_t *player, fighter_t *fighter, float delta_time)
                 (crouching) ? STATE_CROUCH_BLOCK : STATE_STAND_BLOCK
             );
         }
-        // ---- JUMP ------------------------------------------------------------------------
-        if (can_fighter_do & CAN_JUMP && input & INPUT_PRESSED_UP)
-        {
-            fighter->velocity.y  = -fighter->stat.jump_force; // Jump force is positive stat number so it gets negated here
-            fighter->is_grounded = false;
-            fighter_set_state(fighter, STATE_AIRBORNE);
-        }
     } 
     // Airborn input
     else 
@@ -517,22 +591,19 @@ void fighter_update(player_t *player, fighter_t *fighter, float delta_time)
             fighter_set_state(fighter, STATE_AIRBORNE_ATK);
         }
     }
-    // ---- DASH ------------------------------------------------------------------------
-    if (can_fighter_do & CAN_DASH)
-    {
-        input_sequence_t dash_f = {{INPUT_PRESSED_RIGHT, INPUT_PRESSED_RIGHT}, 2};
-        input_sequence_t dash_b = {{INPUT_PRESSED_LEFT, INPUT_PRESSED_LEFT}, 2};
-        
-        if (player_check_combo(player, &dash_f)) fighter_set_state(fighter, STATE_DASH_FORWARD);
-        if (player_check_combo(player, &dash_b)) fighter_set_state(fighter, STATE_DASH_BACKWARD);
-    }
-
+    
     // ---- STATE MACHINE -------------------------------------------------------------------
-state_machine:    
-    switch (fighter->state)
+state_machine:;
+    fighter_state_id_t state = (fighter_state_id_t)fighter->state.id; 
+    bool is_stun_active   = fighter->state.timer < fighter->active_stun;
+    bool is_state_active  = fighter->state.timer < fighter->state.duration; 
+    bool is_airborn       = is_fighter_airborn(fighter);
+    bool is_crouching     = is_fighter_crouching(fighter);
+    switch (state)
     {
         // ---- IDLE ------------------------------------------------------------------------
         case STATE_POSE_VICTORY: break;
+        case STATE_POSE_DEFEAT: break;
         case STATE_IDLE: 
         {
             if (input & INPUT_HOLDING_LEFT) 
@@ -551,77 +622,44 @@ state_machine:
         case STATE_WALK_BACKWARD:
         {
             if (input & INPUT_HOLDING_LEFT) 
-            { 
-                fighter->velocity.x = -fighter->stat.walk_speed;
-            }
+                fighter->pysics.velocity.x = -fighter->def->walk_speed;
+            
             else if (input & INPUT_HOLDING_RIGHT) 
-            {
-                fighter->velocity.x = fighter->stat.walk_speed;
-            }
+                fighter->pysics.velocity.x = fighter->def->walk_speed;
+            
             else
                 fighter_set_state(fighter, STATE_IDLE);
-                
             break;
         }
         // ---- DASH ------------------------------------------------------------------------
         case STATE_DASH_FORWARD:
-        {
-            // On state entry (state_timer near zero) give the burst
-            if (fighter->state_timer <= TICKS(1))
-            {
-                float dir = fighter->facing_right ? 1.0f : -1.0f;
-                fighter->velocity.x = dir * 500.0f; // tune this
-            }
-        
-            // End dash after duration or when velocity bleeds off
-            if (fighter->state_timer >= TICKS(15))
-                fighter_set_state(fighter, STATE_WALK_FORWARD);
-            
-            break;
-        }
         case STATE_DASH_BACKWARD:
         {
-            // On state entry (state_timer near zero) give the burst
-            if (fighter->state_timer <= TICKS(1))
+            if (fighter->state.timer <= TICKS(1))
             {
-                float dir = fighter->facing_right ? -1.0f : 1.0f;
-                fighter->velocity.x = dir * 500.0f; // tune this
+                float dir = (fighter->state.id == STATE_DASH_FORWARD) == fighter->pysics.facing_right
+                    ? 1.0f 
+                    : -1.0f;
+                fighter->pysics.velocity.x = dir * (fighter->def->walk_speed * 2.0f);
             }
-        
-            // End dash after duration or when velocity bleeds off
-            if (fighter->state_timer >= TICKS(15))
-                fighter_set_state(fighter, STATE_WALK_BACKWARD);
 
+            if (fabsf(fighter->pysics.velocity.x) < 30.0f && 
+                (fighter->hit_landed_at == -1 || (!is_state_active)))
+            {
+                fighter_set_state(fighter, (state == STATE_DASH_FORWARD)
+                    ? STATE_WALK_FORWARD 
+                    : STATE_WALK_BACKWARD
+                );
+            }
             break;
         }
         // ---- JUMP ------------------------------------------------------------------------
         case STATE_AIRBORNE: 
         {
             // Air steering
-            if (input & INPUT_HOLDING_LEFT)       fighter->velocity.x = -fighter->stat.walk_speed;
-            else if (input & INPUT_HOLDING_RIGHT) fighter->velocity.x = fighter->stat.walk_speed;
+            if (input & INPUT_HOLDING_LEFT)       fighter->pysics.velocity.x = -fighter->def->walk_speed;
+            else if (input & INPUT_HOLDING_RIGHT) fighter->pysics.velocity.x = fighter->def->walk_speed;
 
-            break;
-        }
-        // ---- BLOCK -----------------------------------------------------------------------
-        case STATE_STAND_BLOCK: 
-        {
-            fighter->velocity.x = 0.0f;
-            
-            if (!((swaped_input & INPUT_HOLDING_BLOCK) == INPUT_HOLDING_BLOCK))
-                fighter_set_state(fighter, STATE_IDLE);
-
-            if (input & INPUT_HOLDING_DOWN) fighter_set_state(fighter, STATE_CROUCH);
-            break;
-        }
-        // ---- CROUCH BLOCK ----------------------------------------------------------------
-        case STATE_CROUCH_BLOCK: 
-        {
-            fighter->velocity.x = 0.0f;
-            if (!((swaped_input & INPUT_HOLDING_BLOCK) == INPUT_HOLDING_BLOCK)) 
-                fighter_set_state(fighter, STATE_CROUCH);
-            
-            if (!(input & INPUT_HOLDING_DOWN)) fighter_set_state(fighter, STATE_STAND_BLOCK);
             break;
         }
         // ---- CROUCH ----------------------------------------------------------------------
@@ -633,64 +671,55 @@ state_machine:
             }
             break;
         }
+        // ---- BLOCK -----------------------------------------------------------------------
+        case STATE_STAND_BLOCK: 
+        case STATE_CROUCH_BLOCK: 
+        {
+            fighter->pysics.velocity.x = 0.0f;
 
+            if (input & INPUT_HOLDING_DOWN) fighter_set_state(fighter, STATE_CROUCH_BLOCK);
+            else                            fighter_set_state(fighter, STATE_STAND_BLOCK);
+            
+            if (!((swaped_input & INPUT_HOLDING_BLOCK) == INPUT_HOLDING_BLOCK))
+            {
+                fighter_set_state(fighter, (state == STATE_STAND_BLOCK) 
+                    ? STATE_IDLE 
+                    : STATE_CROUCH
+                );
+            }
+            break;
+        }
         // ---- HITSTUNS --------------------------------------------------------------------
         case STATE_STAND_HITSTUN:
         case STATE_CROUCH_HITSTUN:
-        {
-            if (fighter->state_timer >= fighter->active_stun_duration)
-                fighter_set_state(fighter, (fighter->state == STATE_STAND_HITSTUN) ? 
-                STATE_IDLE : STATE_CROUCH);
-            break;
-        }
-        
         case STATE_AIRBORNE_HITSTUN:
         {
-            if (fighter->state_timer >= fighter->active_stun_duration)
-                fighter_set_state(fighter, STATE_AIRBORNE);
+            if (!is_stun_active)
+            {
+                fighter->active_stun = TICKS(0);
+
+                if (is_crouching)    fighter_set_state(fighter, STATE_CROUCH);
+                else if (is_airborn) fighter_set_state(fighter, STATE_AIRBORNE);
+                else                 fighter_set_state(fighter, STATE_IDLE);
+            }
             break;
         }
         // ---- KNOCKDOWN -------------------------------------------------------------------
         case STATE_KNOCKDOWN:
         {
-            // after half of the 'active_stun_duration' time pased it gets to a STATE_RECOVERY
-            if (fighter->state_timer >= fighter->active_stun_duration)
-                fighter_set_state(fighter, STATE_RECOVERY);
-            break;
-        } 
-        // ---- RECOVERY --------------------------------------------------------------------
-        case STATE_RECOVERY:
-        {
-            if (fighter->state_timer >= fighter->animation->total_ticks)
+            // after half of the 'active_stun' time pased it gets to a STATE_RECOVERY
+            if (!is_stun_active)
             {
-                if (fighter->is_grounded)
-                    fighter_set_state(fighter, STATE_IDLE);
-                else
-                    fighter_set_state(fighter, STATE_AIRBORNE);
+                fighter->active_stun = TICKS(0);
+                fighter_set_state(fighter, STATE_RECOVERY);
             }
             break;
-        }     
-        // ---- JUMP ATTACK -----------------------------------------------------------------
+        } 
+        // ---- ATTACKS ---------------------------------------------------------------------
         case STATE_AIRBORNE_ATK:     
-        {
-            if (fighter->state_timer >= fighter->state_duration)
-            {
-                fighter_set_state(fighter, STATE_AIRBORNE);
-            }    
-            break;
-        }
-        // ---- CROUCH ATTACK ---------------------------------------------------------------
         case STATE_CROUCH_LIGHT:
         case STATE_CROUCH_MEDIUM:
         case STATE_CROUCH_HEAVY:
-        {
-            if (fighter->state_timer >= fighter->state_duration)
-            {
-                fighter_set_state(fighter, STATE_CROUCH);
-            }
-            break;
-        }
-        // ---- STAND ATTACK ----------------------------------------------------------------
         case STATE_STAND_LIGHT:  
         case STATE_STAND_MEDIUM: 
         case STATE_STAND_HEAVY:  
@@ -699,13 +728,17 @@ state_machine:
         case STATE_COMBO3:
         case STATE_SPECIAL1:
         case STATE_SPECIAL2:
+        case STATE_RECOVERY:
         {
-            if (fighter->state_timer >= fighter->state_duration)
+            if (!is_state_active)
             {
-                fighter_set_state(fighter, STATE_IDLE);
+                if (is_crouching)    fighter_set_state(fighter, STATE_CROUCH);
+                else if (is_airborn) fighter_set_state(fighter, STATE_AIRBORNE);
+                else                 fighter_set_state(fighter, STATE_IDLE);
             }
-            break; 
-        } 
+            break;
+        }
+
         case STATE_COUNT: break; // Ignore
     }
     // Animation update
@@ -714,99 +747,90 @@ state_machine:
 
 static void fighter_update_animation(fighter_t *fighter)
 {
-    fighter->animation_tick++;
-
-    // ---- ANIM FRAME ---------------------------------------------------
-    // Frame_duration = ticks * dt
-    const animation_t *anim = fighter->animation;
-    int32_t ticks = 0;
-    for_range_i((unsigned)fighter->animation_frame + 1)
-        ticks += anim->frames[i].ticks;
-    
-    if (fighter->animation_tick >= ticks)
-    {
-        fighter->animation_frame++;
-    
-        if (anim->frame_count <= fighter->animation_frame)
-        {
-            if (anim->loop) 
-            {
-                fighter->animation_frame = 0;
-                fighter->animation_tick = 0;
-            } else
-            {
-                fighter->animation_frame = anim->frame_count - 1;
-                fighter->animation_tick = anim->total_ticks;
-            }
-        }
-    }
+    animation_update(&fighter->animation);
         
-    // ---- ANIM STATE ---------------------------------------------------
-    const animation_id_t curr_anim = fighter->animation_id;
-    animation_id_t       next_anim = state_defs[fighter->state].anim;  
+    // ---- ANIM STATE ------------------------------------------------------
+    // NOTE: The function is comparing the animation id with current state id
+    // to see if it needs to switch and if the animation should be restarted 
+    const fighter_state_id_t curr_anim = (fighter_state_id_t)fighter->animation.id;
+    fighter_state_id_t       next_anim = (fighter_state_id_t)fighter->state.id;  
     bool restart = true; // restart animation 
 
-    if (curr_anim == ANIM_AIRBORNE_ATK || curr_anim == ANIM_AIRBORNE_HITSTUN) 
+    if (curr_anim == STATE_AIRBORNE_ATK || curr_anim == STATE_AIRBORNE_HITSTUN) 
         restart = false;
-    if ((next_anim == ANIM_CROUCH) && (
-        curr_anim == ANIM_CROUCH_LIGHT   || 
-        curr_anim == ANIM_CROUCH_MEDIUM  || 
-        curr_anim == ANIM_CROUCH_HEAVY   ||
-        curr_anim == ANIM_CROUCH_HITSTUN ||
-        curr_anim == ANIM_CROUCH_BLOCK)
-        ) restart = false;
+    if ((next_anim == STATE_CROUCH) && (
+        curr_anim == STATE_CROUCH_LIGHT   || 
+        curr_anim == STATE_CROUCH_MEDIUM  || 
+        curr_anim == STATE_CROUCH_HEAVY   ||
+        curr_anim == STATE_CROUCH_HITSTUN ||
+        curr_anim == STATE_CROUCH_BLOCK)
+    ) restart = false;
 
-    if (next_anim == ANIM_WALK_FORWARD || next_anim == ANIM_WALK_BACKWARD) 
+    if (next_anim == STATE_WALK_FORWARD || next_anim == STATE_WALK_BACKWARD) 
     {
-        next_anim = (fighter->velocity.x > 0) == fighter->facing_right
-            ? ANIM_WALK_FORWARD 
-            : ANIM_WALK_BACKWARD;
+        next_anim = (fighter->pysics.velocity.x > 0) == fighter->pysics.facing_right
+            ? STATE_WALK_FORWARD 
+            : STATE_WALK_BACKWARD;
     }
 
-    // ---- ANIM CHANGE --------------------------------------------------
-    if (curr_anim != next_anim) 
+    // Animation switching 
+    animation_change(&fighter->animation, (int32_t)next_anim, restart);
+}
+
+const frame_t *animation_get_frame(animation_t *anim)
+{
+    return &anim->animations[anim->id].frames[anim->frame];
+}
+
+/* bool frame_check_hit(frame_t *fr_atk, frame_t *fr_def)
+{
+    for_range_i(fr_atk->count_hitboxs)
     {
-        // If animation changes then it restarts the timer and the frame to zero
-        fighter->animation = &fighter->stat.animations[next_anim];
-        fighter->animation_id = next_anim;
-        fighter->animation_tick = TICKS(0);
-        // Sets the animation to last frame or first
-        if (restart)
+        const SDL_Rect hit = to_world_rect(atk, fr_atk->hitboxs[i]);
+
+        for_range_j(fr_def->count_hurtboxs)
         {
-            fighter->animation_frame = 0;
-            fighter->animation_tick = TICKS(0);
-        } else 
-        {
-            fighter->animation_frame = fighter->animation->frame_count - 1;
-            fighter->animation_tick = TICKS(fighter->animation->total_ticks);
+            const SDL_Rect hurt = to_world_rect(def, fr_def->hurtboxs[j]);
+
+            if (SDL_HasIntersection(&hit, &hurt))
+                return true;
         }
     }
-}
+} */
 
-const anim_frame_t *fighter_get_frame_data(fighter_t *fighter)
+SDL_Rect frame_rect_facing_position(const frame_t *frame, pysics_t *pysics)
 {
-    return &fighter->stat.animations[fighter->animation_id].frames[fighter->animation_frame];
+    SDL_Rect rect;
+    if (pysics->facing_right)
+        rect.x = (int32_t)pysics->position.x - frame->offset.x;
+    else
+        rect.x = (int32_t)pysics->position.x - (frame->src.w - frame->offset.x);
+
+    rect.y = (int32_t)pysics->position.y - frame->offset.y;
+    rect.w = frame->src.w; 
+    rect.h = frame->src.h;
+
+    return rect;
 }
 
-// rect.x - off.x / rect.y - off.y
 SDL_Rect to_world_rect(fighter_t *fighter, SDL_Rect local)
 {
-    const anim_frame_t *frame = fighter_get_frame_data(fighter);
+    const frame_t *frame = animation_get_frame(&fighter->animation);
 
     // top-left corner of the sprite in world space
     float sprite_left, sprite_top;
 
-    if (fighter->facing_right)
-        sprite_left = fighter->position.x - (float)frame->offset.x;
+    if (fighter->pysics.facing_right)
+        sprite_left = fighter->pysics.position.x - (float)frame->offset.x;
     else
         // flipped: offset_x measured from right edge instead
-        sprite_left = fighter->position.x - (float)(frame->src.w - frame->offset.x);
+        sprite_left = fighter->pysics.position.x - (float)(frame->src.w - frame->offset.x);
 
-    sprite_top = fighter->position.y - (float)frame->offset.y;
+    sprite_top = fighter->pysics.position.y - (float)frame->offset.y;
 
     SDL_Rect world;
 
-    if (fighter->facing_right)
+    if (fighter->pysics.facing_right)
     {
         world.x = (int32_t)sprite_left + local.x;
     }
@@ -817,7 +841,7 @@ SDL_Rect to_world_rect(fighter_t *fighter, SDL_Rect local)
         world.x = (int32_t)sprite_left + (frame->src.w - local.x - local.w);
     }
 
-    world.y = (int32_t)sprite_top  + local.y;
+    world.y = (int32_t)sprite_top + local.y;
     world.w = local.w;
     world.h = local.h;
 
@@ -826,8 +850,8 @@ SDL_Rect to_world_rect(fighter_t *fighter, SDL_Rect local)
 
 static bool fighter_check_hit(fighter_t *atk, fighter_t *def)
 {
-    const anim_frame_t *col_atk = fighter_get_frame_data(atk);
-    const anim_frame_t *col_def = fighter_get_frame_data(def);
+    const frame_t *col_atk = animation_get_frame(&atk->animation);
+    const frame_t *col_def = animation_get_frame(&def->animation);
 
     for_range_i(col_atk->count_hitboxs)
     {
@@ -847,8 +871,8 @@ static bool fighter_check_hit(fighter_t *atk, fighter_t *def)
 /** \returns overlap amout on x axis, or zero */
 float fighter_check_overlap(fighter_t *f1, fighter_t *f2)
 {
-    const anim_frame_t *f1_col = fighter_get_frame_data(f1);
-    const anim_frame_t *f2_col = fighter_get_frame_data(f2);
+    const frame_t *f1_col = animation_get_frame(&f1->animation);
+    const frame_t *f2_col = animation_get_frame(&f2->animation);
 
     for_range_i(f1_col->count_hurtboxs)
     {
@@ -869,125 +893,73 @@ float fighter_check_overlap(fighter_t *f1, fighter_t *f2)
                 
                 return overlap;
             } else
-                return 0.0f;
+                continue;
         }
     }
     return 0.0f;
 }
 
-// ---- PROJECTILE --------------------------------------------------------------------------
-static void fighter_spawn_projectile(fighter_t *owner, attack_id_t atk_id)
+// TODO: Make this used for fighters and projectile because 
+// this func is going set .hit_landed_at = timer and  
+// to apply recoil to owner of a projectile
+static void attack_apply_simple(const attack_t *simple, fighter_t *atk, fighter_t *def, void *ctx)
 {
-    if (!(owner->stat.attacks[atk_id].flags & ATK_FLAG_PROJECTILE)) return;
-
-    const projectile_t *projectile = &owner->stat.attacks[atk_id].projectile;
-
-    for_range_i(lenghtof(owner->projectiles))
+    const attack_simple_t *attack = &simple->stats;
+    
+    if (attack->func)
     {
-        if (!owner->projectiles[i].active)
-        {
-            owner->projectiles[i] = *projectile;
-            owner->projectiles[i].active = true;
-            
-            vec2f_t spawn_position = vec2_add(&owner->position, &projectile->spawn_offset);
-
-            owner->projectiles[i].position = spawn_position;
-            owner->projectiles[i].last_hit_tick = TICKS(-1);
-        } 
+        attack->func(atk, def, ctx); 
+        return;
     }
-}
+    // Attack context
+    bool crouching = is_fighter_crouching(def); 
+    bool airborn = is_fighter_airborn(def); 
+    bool blocked = ( 
+        (def->state.id == STATE_STAND_BLOCK  && !(attack->flags & ATK_FLAG_CANT_BLOCK_STANDING)) ||
+        (def->state.id == STATE_CROUCH_BLOCK && !(attack->flags & ATK_FLAG_CANT_BLOCK_CROUCHING))
+    );
 
-static bool fighter_projectle_check_hit(projectile_t *projectile, fighter_t *def)
-{
-    // Convert to the world rect
-    SDL_Rect proj_hitbox = projectile->hitbox;
-    proj_hitbox.x = (int32_t)projectile->position.x - (proj_hitbox.w / 2);    
-    proj_hitbox.y = (int32_t)projectile->position.y - (proj_hitbox.h / 2);    
+    int32_t damage = (blocked) // 90% of damage is blocked
+        ? (int32_t)((float)attack->damage * 0.10f)
+        : attack->damage;
     
-    // Defender rect conversion
-    const anim_frame_t *frame = fighter_get_frame_data(def);
-    for_range_i(frame->count_hurtboxs)
+    float dir = atk->pysics.facing_right ? 1.0f : -1.0f;
+    
+    vec2f_t knockback = 
+        vec2f_mul((blocked) // 90% of knockback is blocked
+            ? vec2f_mul(attack->knockback, vec2f(0.10f, 0.10f))
+            : attack->knockback,
+            vec2f(dir, 1.0f)
+        );
+
+    vec2f_t recoil = vec2f_mul(attack->recoil, vec2f(-dir, 1.0f));
+    uint32_t atk_ragebait = (!blocked) ? (uint32_t)((float)attack->damage * 0.50f) : 0;
+    uint32_t def_ragebait = (!blocked) ? (uint32_t)((float)attack->damage * 0.75f) : (uint32_t)attack->damage;
+
+    // Applying the attack
+    def->hp             -= damage;
+    def->pysics.velocity = knockback;
+    def->ragebait_meter += def_ragebait;
+
+    atk->hit_landed_at   = atk->state.timer;
+    atk->pysics.velocity = recoil;
+    atk->ragebait_meter += atk_ragebait; 
+
+    if (!blocked)
     {
-        SDL_Rect def_hurtbox = to_world_rect(def, frame->hurtboxs[i]);
-
-        // Did projectile hit the enemy
-        if (SDL_HasIntersection(&proj_hitbox, &def_hurtbox))
-            return true;
-    }
-    return false;
-}
-
-void fighter_projectile_update(fighter_t *owner, fighter_t *def, float delta_time)
-{
-    for_range_i(lenghtof(owner->projectiles))
-    {
-        projectile_t *projectile = &owner->projectiles[i];
-        if (!projectile->active) continue;
-        
-        if (projectile->timer_ticks >= projectile->lifetime_ticks) 
+        def->active_stun = attack->stun_duration;
+        if (ctx != NULL)
         {
-            projectile->active = false; 
-            continue;
+            match_t *match = (match_t *)ctx;
+            match->hitstop = attack->hitstop; 
         }
-        
-        projectile->timer_ticks++;
-        
-        // ---- PYSICS -----------------------------------------------
-        vec2f_t vel = {delta_time, delta_time};
-        vec2_mul_eq(&vel, &projectile->velocity);
-        vec2_add_eq(&projectile->position, &vel);
-        
-        // ---- ATTACKS ----------------------------------------------
-        // Applay projectile attack damage here 
-        if (fighter_projectle_check_hit(projectile, def))
+
+        if (attack->flags & ATK_FLAG_KNOCKDOWN) fighter_set_state(def, STATE_KNOCKDOWN);
+        else
         {
-            // No multihit projectiles for now
-            if (projectile->last_hit_tick != TICKS(-1)) return;
-
-            projectile->last_hit_tick = projectile->timer_ticks; 
-            const attack_t *attack = &owner->stat.attacks[projectile->attack_id];
-            
-            float dir = projectile->facing_right ? 1.0f : -1.0f;
-            bool blocked = (
-                (def->state == STATE_STAND_BLOCK  && !(attack->flags & ATK_FLAG_CANT_BLOCK_STANDING)) ||
-                (def->state == STATE_CROUCH_BLOCK && !(attack->flags & ATK_FLAG_CANT_BLOCK_CROUCHING))
-            );
-
-            projectile->velocity.x += -(dir * attack->recoil_x);
-            projectile->velocity.y += -attack->recoil_y;
-
-            if (blocked) 
-                def->hp -= (int32_t)((float)attack->damage * 0.10f); 
-            else 
-                def->hp -= attack->damage; 
-
-            def->velocity.x = dir * attack->knockback_x;
-            def->velocity.y =       attack->knockback_y;
-            def->active_stun_duration = attack->stun_duration;
-
-            fighter_set_state(def, (attack->flags & ATK_FLAG_KNOCKDOWN)
-                ? STATE_KNOCKDOWN
-                : STATE_STAND_HITSTUN
-            );
-        }
-        
-        // ---- ANIMATION --------------------------------------------
-        const animation_t *anim = &projectile->anim;
-        int32_t ticks = 0;
-        for_range_j((unsigned)projectile->anim_frame + 1)
-            ticks += anim->frames[j].ticks;
-    
-        if (projectile->timer_ticks >= ticks)
-        {
-            projectile->anim_frame++;
-    
-            if (anim->frame_count <= projectile->anim_frame)
-            {
-                if (anim->loop) 
-                    projectile->anim_frame = 0;
-                else
-                    projectile->anim_frame = anim->frame_count - 1;
-            }
+            if (crouching)    fighter_set_state(def, STATE_CROUCH_HITSTUN);
+            else if (airborn) fighter_set_state(def, STATE_AIRBORNE_HITSTUN);
+            else              fighter_set_state(def, STATE_STAND_HITSTUN);
         }
     }
 }
@@ -997,173 +969,85 @@ void fighter_update_attack(fighter_t *atk, fighter_t *def, void *ctx)
 {
     if (atk->curr_attack_id == ATK_ID_NONE) return;
 
-    const attack_t *attack = &atk->stat.attacks[atk->curr_attack_id];
-    int32_t tick = atk->state_timer;
+    const attack_t *attack = &atk->def->attacks[atk->curr_attack_id];
+    int32_t tick = atk->state.timer;
 
     // ---- ACTIVE WINDOW ---------------------------------------------------
     bool in_active_window = (
-        tick >= (int32_t)attack->startup_ticks &&
-        tick <  (int32_t)(attack->startup_ticks + attack->active_ticks)
+        tick >= (int32_t)attack->startup &&
+        tick <  (int32_t)(attack->startup + attack->active)
     );
     if (!in_active_window) return;
 
-    bool is_multihit = (attack->flags & ATK_FLAG_MULTIHIT);
-
-    if      (atk->last_hit_tick == tick && is_multihit) return; // Multihit already hit this frame
-    else if (atk->last_hit_tick != -1 && !is_multihit) return;  // Normal already hit this frame
-
-    // ---- CONTEXT ---------------------------------------------------------
-    bool crouching = is_fighter_crouching(def);
-    bool airborne  = is_fighter_airborn(def);
-
-    bool blocked = (!airborne) && (
-        (def->state == STATE_STAND_BLOCK  && !(attack->flags & ATK_FLAG_CANT_BLOCK_STANDING)) ||
-        (def->state == STATE_CROUCH_BLOCK && !(attack->flags & ATK_FLAG_CANT_BLOCK_CROUCHING))
-    );
-
-    float dir = atk->facing_right ? 1.0f : -1.0f;
-    bool hit  = fighter_check_hit(atk, def);
-    bool is_last_hit = (tick == (attack->startup_ticks + attack->active_ticks - 1));
-
-    // ---- PROJECTILE ------------------------------------------------------
-    if (attack->flags & ATK_FLAG_PROJECTILE)
-    { 
-        if (tick == atk->last_hit_tick)
-        {
-            fighter_spawn_projectile(atk, atk->curr_attack_id);
-            atk->last_hit_tick = tick;
-        }
-        return;
-    }
-
-    // ---- GRAB ------------------------------------------------------------
-    if (attack->flags & ATK_FLAG_GRAB)
-    {
-        float dist = SDL_fabsf(atk->position.x - def->position.x);
-        bool grabbable = (
-            dist < 40.0f     &&
-            def->is_grounded &&
-            !blocked         && // cant grab while blocking
-            def->curr_attack_id == ATK_ID_NONE &&
-            def->state != STATE_STAND_HITSTUN  &&
-            def->state != STATE_CROUCH_HITSTUN &&
-            def->state != STATE_KNOCKDOWN      &&
-            def->state != STATE_RECOVERY
-        );
-        if (!grabbable) return;
-
-        def->hp           -= attack->damage;
-        atk->last_hit_tick = tick;
-        def->velocity.x    = dir * attack->knockback_x;
-        def->velocity.y    =       attack->knockback_y;
-        def->active_stun_duration = attack->stun_duration;
-
-        fighter_set_state(def, (attack->flags & ATK_FLAG_KNOCKDOWN)
-            ? STATE_KNOCKDOWN
-            : STATE_STAND_HITSTUN);
-
-        if (attack->func) attack->func(atk, def, ctx);
-        return;
-    }
-
     // ---- TRIGGER ---------------------------------------------------------
+    bool trigger = false;
     switch (attack->triger)
     {
         case ATK_TRIGGER_ON_HIT:
-            if (!hit) return;
+            trigger = fighter_check_hit(atk, def);
             break;
 
         case ATK_TRIGGER_ON_COUNTER:
-            if (!hit) return;
-            if (def->curr_attack_id == ATK_ID_NONE) return;
+            trigger = fighter_check_hit(def, atk);
             break;
 
-        case ATK_TRIGGER_ON_WHIFF:
-            if (atk->last_hit_tick != -1) return;               // something already landed
-            if (atk->state_timer < atk->state_duration) return; // attack still going
-            atk->state_duration += TICKS(15);                   // whiff penalty
-            if (attack->func) attack->func(atk, def, ctx);
-            return;
+        case ATK_TRIGGER_IN_RANGE:
+        {
+            vec2f_t dist = vec2f_sub(atk->pysics.position, def->pysics.position);
+            dist.x = fabsf(dist.x); 
+            dist.y = fabsf(dist.y);
+            trigger = (attack->range >= dist.x || attack->range >= dist.y);
+            break;
+        }
     }
 
-    atk->last_hit_tick = tick;
-
-    // ---- BLOCKED HIT (for ON_HIT attacks that get blocked) ---------------
-    if (blocked)
+    switch (attack->kind)
     {
-        def->hp           -= (int32_t)((float)attack->damage * 0.10f);
-        def->velocity.x    =  dir * 80.0f;
-        atk->velocity.x   += -(dir * 40.0f);
-
-        // Attacke gets nothing on block
-        def->ragebait_meter += (uint32_t)attack->damage;
-
-        if (attack->func) attack->func(atk, def, ctx);
-        return;
-    }
-
-    // ---- APPLY HIT -------------------------------------------------------
-    // recoil always applies
-    atk->velocity.x += -(dir * attack->recoil_x);
-    atk->velocity.y +=       -attack->recoil_y;
-
-    if (is_multihit)
-    {
-        // ---- INTERMEDIATE HIT --------------------------------------------
-        if (!is_last_hit && (tick % attack->multihit_interval == 0))
+        case ATK_KIND_SIMPLE:
         {
-            def->hp             -= attack->damage;
-            def->velocity.x      = dir * 20.0f;  // small push, keeps in range
-            def->velocity.y      = 0.0f;
-            def->active_stun_duration = TICKS(3);
-
-            def->ragebait_meter += (uint32_t)((float)attack->damage * 0.50f);
-            def->ragebait_meter += (uint32_t)((float)attack->damage * 0.75f);
-    
-            fighter_set_state(def, crouching ? STATE_CROUCH_HITSTUN : STATE_STAND_HITSTUN);
-            if (airborne) fighter_set_state(def, STATE_AIRBORNE_HITSTUN);    
-        } 
-        else if (is_last_hit)
+            // Attack applyed only once
+            if (atk->hit_landed_at == TICKS(-1) && trigger)
+                attack_apply_simple(attack, atk, def, ctx);
+            break;
+        }
+        case ATK_KIND_MULTIHIT:
         {
-            // ---- LAST HIT ------------------------------------------------
-            def->hp             -= attack->damage;
-            def->velocity.x      = dir * attack->knockback_x;
-            def->velocity.y      =       attack->knockback_y;
-            def->active_stun_duration = attack->stun_duration;
+            bool is_last_hit = (tick == (attack->startup + attack->active - 1));
+            
+            if (is_last_hit && trigger)
+                attack_apply_simple(attack, atk ,def, ctx);
 
-            atk->ragebait_meter += (uint32_t)((float)attack->damage * 0.50f);
-            def->ragebait_meter += (uint32_t)((float)attack->damage * 0.75f);
-
-            if (attack->flags & ATK_FLAG_KNOCKDOWN)
-                fighter_set_state(def, STATE_KNOCKDOWN);
-            else
+            else if ((tick % attack->multihit_interval == 0) && trigger)
+                attack_apply_simple(attack, atk ,def, ctx);
+            break;
+        }
+        case ATK_KIND_GRAB:
+        {
+            // TODO: Decide if enemy could be grabbed while attacking 
+            if (!is_fighter_stuned(def) && !is_fighter_immune(def) && trigger)
             {
-                fighter_set_state(def, crouching ? STATE_CROUCH_HITSTUN : STATE_STAND_HITSTUN);
-                if (airborne) fighter_set_state(def, STATE_AIRBORNE_HITSTUN);
+                vec2f_t offset = (atk->pysics.facing_right) 
+                    ? attack->grab_offset
+                    : vec2f(-1.0f * attack->grab_offset.x, attack->grab_offset.y);
+                
+                // Teleports defender to grab position
+                def->pysics.position = vec2f_add(atk->pysics.position, offset);
+
+                fighter_set_state(def, STATE_AIRBORNE_HITSTUN);
+                def->active_stun = attack->grab_duration;
+            
+                if (atk->state.timer >= attack->grab_duration && atk->hit_landed_at == TICKS(-1))
+                    attack_apply_simple(attack, atk, def, ctx);
             }
+            break;
         }
-    }
-    else
-    {
-        // ---- SINGLE HIT ------------------------------------------
-        def->hp             -= attack->damage;
-        def->velocity.x      = dir * attack->knockback_x;
-        def->velocity.y      =       attack->knockback_y;
-        def->active_stun_duration = attack->stun_duration;
-
-        atk->ragebait_meter += (uint32_t)((float)attack->damage * 0.50f);
-        def->ragebait_meter += (uint32_t)((float)attack->damage * 0.75f);
-
-        if (attack->flags & ATK_FLAG_KNOCKDOWN)
-            fighter_set_state(def, STATE_KNOCKDOWN);
-        else
+        case ATK_KIND_DASH:
         {
-            fighter_set_state(def, crouching ? STATE_CROUCH_HITSTUN : STATE_STAND_HITSTUN);
-            if (airborne) fighter_set_state(def, STATE_AIRBORNE_HITSTUN);
+            if (atk->hit_landed_at == TICKS(-1) && trigger)
+                attack_apply_simple(attack, atk, def, ctx);
+            break;
         }
     }
-
-    if (attack->func) attack->func(atk, def, ctx);
 }
 
 

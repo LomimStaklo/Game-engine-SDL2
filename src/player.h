@@ -133,9 +133,9 @@ bool player_check_combo(player_t *player, const input_sequence_t *seq)
     int32_t history_len      = lenghtof(player->input_history);
     int32_t seq_step         = seq->count - 1;        // Start from the LAST step of sequence
     float newest_time        = player->input_timer;   // Newest input time
-    const float COMBO_WINDOW = 0.50f;                  // Max seconds between each input in the sequence
+    const float COMBO_WINDOW = 0.65f;                 // Max seconds between each input in the sequence
     // The combo depends on fighters facing direction
-    const bool do_swap = player->fighter.facing_right; 
+    const bool do_swap = player->fighter.pysics.facing_right; 
 
     // walk history from newest [last] to oldest [0]
     for (int32_t i = (history_len - 1); i >= 0 && seq_step >= 0; i--)

@@ -41,10 +41,11 @@ typedef struct asset_t
  */
 #define ASSET_XLIST \
 X(ATLAS_BOKE,  ASSET_TYPE_IMAGE, IMAGE_PATH("atlas_boke.png")) \
-X(STAGE_CAVA,  ASSET_TYPE_IMAGE, IMAGE_PATH("stage_cava.jpg")) \
+X(STAGE_SSFSB, ASSET_TYPE_IMAGE, IMAGE_PATH("stage_ssfsb.jpg")) \
 X(UI_GAME_BAR, ASSET_TYPE_IMAGE, IMAGE_PATH("ui_bar.png")) \
 X(UI_FONT,     ASSET_TYPE_IMAGE, IMAGE_PATH("ui_font.png")) \
 
+//X(STAGE_CAVA,  ASSET_TYPE_IMAGE, IMAGE_PATH("stage_cava.jpg")) \
 //X(UI_ICON,     ASSET_TYPE_IMAGE, IMAGE_PATH("ui_icon.png"))
 
 typedef enum asset_name_t

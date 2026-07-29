@@ -5,9 +5,11 @@
 #define FAJTER_IMPLEMENTATION
 #define MATCH_IMPLEMENTATION
 #define ASSETS_IMPLEMENTATION
+#define CAMERA_IMPLEMENTATION
 #include "assets.h"
 #include "machine.h"
 #include "match.h"
+#include "camera.h"
 #include "game.h"
 
 #include "loging.h"

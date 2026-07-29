@@ -12,6 +12,24 @@
 #define for_range_j(count) for (uint32_t j = 0; j < (count); j++)
 #define str_bool(expr) (expr) ? "true" : "false"  
 
+// Vector implementation
+
+typedef struct vec2i_t { int32_t x, y; } vec2i_t;
+typedef struct vec2f_t { float x, y; }   vec2f_t;
+
+static inline vec2i_t vec2i(int32_t x, int32_t y) { return (vec2i_t){x, y}; }
+static inline vec2f_t vec2f(float x, float y)     { return (vec2f_t){x, y}; }
+
+static inline vec2i_t vec2i_add(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x + vec2.x, vec1.y + vec2.y }; }
+static inline vec2i_t vec2i_sub(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x - vec2.x, vec1.y - vec2.y }; }
+static inline vec2i_t vec2i_mul(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x * vec2.x, vec1.y * vec2.y }; }
+static inline vec2i_t vec2i_div(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x / vec2.x, vec1.y / vec2.y }; }
+
+static inline vec2f_t vec2f_add(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x + vec2.x, vec1.y + vec2.y }; }
+static inline vec2f_t vec2f_sub(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x - vec2.x, vec1.y - vec2.y }; }
+static inline vec2f_t vec2f_mul(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x * vec2.x, vec1.y * vec2.y }; }
+static inline vec2f_t vec2f_div(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x / vec2.x, vec1.y / vec2.y }; }
+
 /** 
  * Compile time assert
  * \param val the value that gets returned

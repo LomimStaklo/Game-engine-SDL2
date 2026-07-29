@@ -72,16 +72,16 @@ void machine_init(machine_t *machine, renderer_t *renderer, player_t *p1, player
     machine->curr_state = GAME_STATE_MENU;
     machine->next_state = GAME_STATE_MENU;
     
-    p1->fighter = character_get(renderer, CHARACTER_BOKE, 0.0f);
-    p2->fighter = character_get(renderer, CHARACTER_BOKE, 200.0f);
+    character_constructor(&p1->fighter, renderer, CHARACTER_BOKE, 0.0f);
+    character_constructor(&p2->fighter, renderer, CHARACTER_BOKE, 250.0f);
 
-    match_textures_t texs = 
+    match_resurces_t texs = 
     {
         .ui    = asset_get_texture(ASSET_UI_GAME_BAR),
-        .stage = asset_get_texture(ASSET_STAGE_CAVA)
+        .stage = asset_get_texture(ASSET_STAGE_SSFSB)
     }; 
-    
-    machine->match = match_start(90.0f, 3, p1, p2, &texs);
+
+    machine->match = match_start(renderer, 90.0f, 3, p1, p2, &texs);
 }
 
 void machine_update(machine_t *machine, float delta_time)
@@ -106,7 +106,7 @@ void machine_update(machine_t *machine, float delta_time)
             if (!machine->transitioning)
             {
                 machine_queue_state(machine, GAME_STATE_MATCH);
-                machine_begin_transition(machine, 5.0f);
+                machine_begin_transition(machine, 2.5f);
             }
         break;
 
@@ -116,7 +116,7 @@ void machine_update(machine_t *machine, float delta_time)
             if (machine->match.state == MATCH_STATE_EXIT && (!machine->transitioning))
             {
                 machine_queue_state(machine, GAME_STATE_MENU);
-                machine_begin_transition(machine, 5.0f); 
+                machine_begin_transition(machine, 2.5f); 
             }
             
         break;

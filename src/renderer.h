@@ -115,6 +115,7 @@ typedef struct renderer_t
 bool init_renderer(renderer_t *renderer);
 void destroy_renderer(renderer_t *renderer); // Destroys the renderer with all textures
 
+void renderer_texture_size(renderer_t *renderer, texture_handle_t handle, int32_t *w, int32_t *h);
 texture_handle_t renderer_load_texture(renderer_t *renderer, const char *filename);
 /** 
  * Loads the texture form array of bytes in to renderer
@@ -179,9 +180,14 @@ void renderer_draw_text(
 
 struct fighter_t;
 struct projectile_t;
-void renderer_draw_fighter(renderer_t *renderer, struct fighter_t *fighter);
-void renderer_draw_projectile(renderer_t *renderer, texture_handle_t owner_texture, struct projectile_t *proj);
+struct animation_t;
+struct pysics_t;
 
+void renderer_draw_animation(renderer_t *renderer, struct animation_t *anim, struct pysics_t *pysics, SDL_Rect view, render_layer_t layer);
+void renderer_draw_fighter(renderer_t *renderer, struct fighter_t *fighter, SDL_Rect view, int32_t floor);
+//void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter, SDL_Rect view, float floor)
+
+// void renderer_draw_projectile(renderer_t *renderer, struct projectile_t *proj);
 // ================
 //  IMPLEMENTATION
 // ================
@@ -262,6 +268,14 @@ SDL_Texture *renderer_handle_to_texture(renderer_t *renderer, texture_handle_t h
         return NULL;
 
     return renderer->textures[handle];
+}
+
+void renderer_texture_size(renderer_t *renderer, texture_handle_t handle, int32_t *w, int32_t *h)
+{
+    SDL_Texture *tex = renderer_handle_to_texture(renderer, handle);
+    if (!tex) return;
+
+    SDL_QueryTexture(tex, NULL, NULL, w, h);
 }
 
 texture_handle_t renderer_load_texture(renderer_t *renderer, const char *filename)
@@ -706,71 +720,58 @@ void renderer_draw_text(
     renderer->command_count[layer] += 1;
 }
 
-// ---- FIGHTER -------------------------------------------------------------------------
-void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter)
-{   
-    const anim_frame_t *frame = fighter_get_frame_data(fighter);
-    
-    // Direction corection
-    SDL_Rect dst; 
-    if (fighter->facing_right) 
-        dst.x = (int32_t)fighter->position.x - frame->offset.x;
-    else
-        dst.x = (int32_t)fighter->position.x - (frame->src.w - frame->offset.x);
+void renderer_draw_animation(renderer_t *renderer, animation_t *anim, pysics_t *pysics, SDL_Rect view, render_layer_t layer)
+{
+    const frame_t *frame = animation_get_frame(anim);
 
-    dst.y = (int32_t)fighter->position.y - frame->offset.y;
-    dst.w = frame->src.w; 
-    dst.h = frame->src.h;
+    SDL_Rect world = frame_rect_facing_position(frame, pysics);
+    SDL_Rect dst   = world_to_screen_rect(view, world);
     
     renderer_draw_texture(
-        renderer, 
-        LAYER_ENTITY,
-        fighter->texture, 
+        renderer,
+        layer,
+        anim->texture,
         &frame->src,
         &dst, 
         0.0, 
-        fighter->facing_right ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL
-    );
-    
-    SDL_Rect shadow = dst;
-    shadow.y = FLOOR_Y_LEVEL - 8;
-    shadow.h -= SDL_clamp((FLOOR_Y_LEVEL - (int32_t)fighter->position.y), 0, 40); 
-    
-    renderer_draw_texture_mod(
-        renderer, 
-        LAYER_ENTITY,
-        fighter->texture, 
-        &frame->src,
-        &shadow, 
-        180.0, 
-        fighter->facing_right ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE,
-        (SDL_Color){0, 0, 0, 128}
+        pysics->facing_right ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE
     );
 }
 
-void renderer_draw_projectile(renderer_t *renderer, texture_handle_t owner_texture, projectile_t *proj)
-{
-    const anim_frame_t *frame = &proj->anim.frames[proj->anim_frame];
-
+// ---- FIGHTER -------------------------------------------------------------------------
+void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter, SDL_Rect view, int32_t floor)
+{   
+    const frame_t *frame = animation_get_frame(&fighter->animation);
+    
     // Direction corection
-    SDL_Rect dst; 
-    if (proj->facing_right) 
-        dst.x = (int32_t)proj->position.x - frame->offset.x;
-    else
-        dst.x = (int32_t)proj->position.x - (frame->src.w - frame->offset.x);
-
-    dst.y = (int32_t)proj->position.y - frame->offset.y;
-    dst.w = frame->src.w; 
-    dst.h = frame->src.h;
+    SDL_Rect world = frame_rect_facing_position(frame, &fighter->pysics);
+    SDL_Rect dst   = world_to_screen_rect(view, world);
 
     renderer_draw_texture(
         renderer, 
         LAYER_ENTITY,
-        owner_texture, 
+        fighter->animation.texture, 
         &frame->src,
         &dst, 
-        0.0, 
-        proj->facing_right ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL
+        0.0,
+        fighter->pysics.facing_right ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL
+    );
+    
+    // Shadow rendering
+    SDL_Rect shadow = world;
+    shadow.y = (int32_t)floor - 8;
+    shadow.h -= SDL_clamp((floor - (int32_t)fighter->pysics.position.y), 0, 40); 
+    shadow = world_to_screen_rect(view, shadow);
+
+    renderer_draw_texture_mod(
+        renderer, 
+        LAYER_ENTITY,
+        fighter->animation.texture, 
+        &frame->src,
+        &shadow, 
+        180.0, 
+        fighter->pysics.facing_right ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE,
+        (SDL_Color){0, 0, 0, 128}
     );
 }
 
