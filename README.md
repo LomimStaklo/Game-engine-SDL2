@@ -55,6 +55,10 @@
 
 The game can be built using a "nob.h" (Tscoding: [Github](https://github.com/tsoding)) script, but it only supports **gcc** or **clang** compilers. 
 
+If you're compiling with CMake, compile with the following commands:
+[cmake -B build -S .]
+[cmake --build build]
+
 After installing the repo the game is built in 2 steps:
 1. Compiling the script once 
 2. Running nob to build the game
