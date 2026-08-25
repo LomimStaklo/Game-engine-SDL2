@@ -58,7 +58,11 @@ void character_constructor(fighter_t *fg, renderer_t *renderer, character_name_t
     { .src = src_r, .ticks = (tick), .offset.x = (offx), .offset.y = (offy), \
       .hurtboxs[0] = {(hurtx), (hurty), (hurtw), (hurth)}, .count_hurtboxs = 1, \
       .hitboxs[0]  = {(hitx),  (hity),  (hitw),  (hith)},  .count_hitboxs  = 1 }
- 
+
+#define FRAME_IMMUNE_HIT(src_r, tick, off_x, off_y, hitx, hity, hitw, hith) \
+{ .src = src_r, .ticks = (tick), .offset.x = (off_x), .offset.y = (off_y),  \
+  .hitboxs[0] = {(hitx),  (hity),  (hitw),  (hith)}, .count_hitboxs  = 1 } \
+
 /**
  * Starting point of 48 by 96 frames in a atlas
  * The atlas is divided in different regions sorted by tile size
@@ -72,7 +76,7 @@ void character_constructor(fighter_t *fg, renderer_t *renderer, character_name_t
 // Magic number where the palette starts in atlas 
 #define CHARACTER_X_COORDEINATE_FOR_PALETTE 1008
 
-static const fighter_def_t fajter_characters_defs[CHARACTER_COUNT];
+global_variable const fighter_def_t fajter_characters_defs[CHARACTER_COUNT];
 
 typedef struct color_hsv_t
 {
@@ -81,7 +85,7 @@ typedef struct color_hsv_t
     float v; // Value/Brightness: 0.0 to 1.0
 } color_hsv_t;
 
-static color_hsv_t RGB_to_HSV(SDL_Color col) 
+internal color_hsv_t RGB_to_HSV(SDL_Color col) 
 {
     color_hsv_t hsv;
     
@@ -109,7 +113,7 @@ static color_hsv_t RGB_to_HSV(SDL_Color col)
     }
 
     // 3. Calculate Hue
-    if (delta == 0.0f) {
+    if (is_in_range(0.0f, 0.0f, delta)) {
         hsv.h = 0.0f; // Achromatic case (Gray, White)
     } else {
         if (is_in_range(r + 0.1f, r - 0.1f, max)) 
@@ -129,7 +133,7 @@ static color_hsv_t RGB_to_HSV(SDL_Color col)
     return hsv;
 }
 
-static SDL_Color HSV_to_RGB(color_hsv_t hsv) 
+internal SDL_Color HSV_to_RGB(color_hsv_t hsv) 
 {
     float c = hsv.v * hsv.s;
     float h_prime = (float)fmod((double)hsv.h / 60.0, 6.0);
@@ -161,8 +165,9 @@ static SDL_Color HSV_to_RGB(color_hsv_t hsv)
  * \param index_x x coordinate where the palette of 10 pixels is
  * \param hue the color hur of new palate 
  */
-static void character_switch_palette(SDL_Surface *surf, uint32_t index_x, float hue)
+internal void character_switch_palette(SDL_Surface *surf, uint32_t index_x, float hue)
 {
+    // TODO: cahnge function to take the  
     if (!surf) return;
 
     // Pitch = SCREEN_WIDTH * bytes-per-pixel
@@ -187,7 +192,7 @@ static void character_switch_palette(SDL_Surface *surf, uint32_t index_x, float 
         
         hsv.h = hue;
         rgb = HSV_to_RGB(hsv); 
-
+        
         new_pale[i] = SDL_MapRGBA(surf->format, rgb.r, rgb.g, rgb.b, alpha); 
     }
 
@@ -250,7 +255,7 @@ void character_constructor(fighter_t *fg, renderer_t *renderer, character_name_t
     fg->animation.animations = &fajter_characters_defs[name].animations[0];
 }
 
-static const fighter_def_t fajter_characters_defs[CHARACTER_COUNT] =
+global_variable const fighter_def_t fajter_characters_defs[CHARACTER_COUNT] =
 {
     [CHARACTER_BOKE] =
     {
@@ -347,7 +352,7 @@ static const fighter_def_t fajter_characters_defs[CHARACTER_COUNT] =
             .stats.damage = 10,
             .stats.stun_duration = TICKS(9),
             .stats.knockback     = {50.0f, 0.0f},  
-            .stats.recoil        = {100.0f, 0.0f},
+            .stats.recoil        = {60.0f, 0.0f},
 
             .startup = TICKS(7),
             .active = TICKS(3),
@@ -486,7 +491,7 @@ static const fighter_def_t fajter_characters_defs[CHARACTER_COUNT] =
         .animations[STATE_DASH_FORWARD] = ANIM(false, TICKS((5 + 5) + (10) + 4),
             FRAME_HURT(TILE_64x96(20), TICKS(5),  24, 88,  0, 24, 6*8, 8*7),
             FRAME_HURT(TILE_64x96(21), TICKS(5),  24, 88,  0, 24, 6*8, 8*7),
-            FRAME_HIT (TILE_64x96(21), TICKS(10), 24, 88,  0, 24, 6*8, 8*7, 8*6, 8*7, 8*3, 8*4),
+            FRAME_HIT (TILE_64x96(21), TICKS(10), 24, 88,  0, 24, 6*8, 8*7, 8*5, 8*7, 8*3, 8*4),
             FRAME_HURT(TILE_64x96(20), TICKS(4),  24, 88,  0, 24, 6*8, 8*7),
         ),
         .attacks[ATK_ID_DASH_FORWARD] =
@@ -505,10 +510,10 @@ static const fighter_def_t fajter_characters_defs[CHARACTER_COUNT] =
             .active  = TICKS(10),
         },
         
-        .animations[STATE_COMBO1] = ANIM(false, TICKS(5 + 5 + 7 + 10),
-            FRAME_HURT(TILE_64x96(22), TICKS(5), 16, 88,  24, 24, 8*3, 8*8),
-            FRAME_HURT(TILE_64x96(23), TICKS(5), 16, 88,  24, 24, 8*3, 8*8),
-            FRAME_HIT (TILE_64x96(24), TICKS(7), 16, 88,  24, 24, 8*3, 8*8,  8*5, 8, 32, 24),
+        .animations[STATE_COMBO1] = ANIM(false, TICKS(10 + 7 + 10 + 10),
+            FRAME_HURT(TILE_64x96(22), TICKS(10), 16, 88,  24, 24, 8*3, 8*8),
+            FRAME_HURT(TILE_64x96(23), TICKS(7),  16, 88,  24, 24, 8*3, 8*8),
+            FRAME_HIT (TILE_64x96(24), TICKS(10), 16, 88,  24, 24, 8*3, 8*8,  8*5, 8, 32, 24),
             FRAME_HURT(TILE_64x96(24), TICKS(10), 16, 88,  24, 24, 8*3, 8*8),
         ),
         .attacks[ATK_ID_COMBO1] = 
@@ -520,22 +525,22 @@ static const fighter_def_t fajter_characters_defs[CHARACTER_COUNT] =
             .stats.damage = 45, 
             .stats.stun_duration = TICKS(60),
             .stats.knockback = {100.0f, -500.0f},
-            .stats.flags  = ATK_FLAG_KNOCKDOWN,
+            .stats.flags  = ATK_FLAG_KNOCKDOWN | ATK_FLAG_WALL_BOUNCE,
 
-            .stats.hitstop = 7,
+            .stats.hitstop = 8,
             
-            .startup = TICKS(10),
-            .active = TICKS(7),
+            .startup = TICKS(17),
+            .active = TICKS(10),
         },
 
         .animations[STATE_COMBO2] = ANIM(false, TICKS(15 + (6 * 8) + 30),
             FRAME_HURT(TILE_64x96(22), TICKS(15), 24, 88,  12, 12, 24, 72),
-            FRAME_HIT (TILE_64x96(25), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*5, 8*5),
-            FRAME_HIT (TILE_64x96(26), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*5, 8*5),
-            FRAME_HIT (TILE_64x96(27), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*5, 8*5),
-            FRAME_HIT (TILE_64x96(25), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*5, 8*5),
-            FRAME_HIT (TILE_64x96(26), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*5, 8*5),
-            FRAME_HIT (TILE_64x96(27), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*5, 8*5),
+            FRAME_HIT (TILE_64x96(25), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*6, 8*5),
+            FRAME_HIT (TILE_64x96(26), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*6, 8*5),
+            FRAME_HIT (TILE_64x96(27), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*6, 8*5),
+            FRAME_HIT (TILE_64x96(25), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*6, 8*5),
+            FRAME_HIT (TILE_64x96(26), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*6, 8*5),
+            FRAME_HIT (TILE_64x96(27), TICKS(8),  24, 88,  12, 12, 24, 72,  8*3, 8*3, 8*6, 8*5),
             FRAME_HURT(TILE_64x96(24), TICKS(30), 24, 88,  12, 12, 24, 72),
         ),
         .attacks[ATK_ID_COMBO2] = 
@@ -555,27 +560,37 @@ static const fighter_def_t fajter_characters_defs[CHARACTER_COUNT] =
             .multihit_interval = TICKS(8),
         },
 
-        //.animations[STATE_COMBO3] = ANIM(false, TICKS(),
-        //    FRAME_HURT(TILE_64x96(28), TICKS(5), 24, 88,  12, 12, 24, 72),   
-        //    FRAME_HURT(TILE_64x96(29), TICKS(5), 24, 88,  12, 12, 24, 72),   
-        //    FRAME_HURT(TILE_64x96(30), TICKS(5), 24, 88,  12, 12, 24, 72),   
-        //    FRAME_HURT(TILE_64x96(31), TICKS(5), 24, 88,  12, 12, 24, 72),   
-        //),
-        //.attacks[ATK_ID_COMBO3] = 
-        //{
-        //    .damage = 50, 
-        //    .stun_duration = TICKS(3),
-        //    .knockback_x = 100.0f,
-        //    
-        //    .startup_ticks = TICKS(3 * 5),
-        //    .active_ticks = TICKS(5),
+        .animations[STATE_COMBO3] = ANIM(false, TICKS(5 * 4),
+            FRAME_HURT(TILE_64x96(28), TICKS(5), 24, 88,  12, 32, 24, 40),   
+            FRAME_HURT(TILE_64x96(29), TICKS(5), 24, 88,  12, 32, 24, 40),   
+            FRAME_HURT(TILE_64x96(30), TICKS(5), 24, 88,  12, 32, 24, 40),   
+            FRAME_HURT(TILE_64x96(31), TICKS(5), 24, 88,  12, 32, 24, 40),   
+        ),
+        .attacks[ATK_ID_COMBO3] = 
+        {
+            .kind   = ATK_KIND_PROJECTILE,
+            .triger = ATK_TRIGGER_ON_HIT,
+            .sequence = {{INPUT_PRESSED_LEFT, INPUT_PRESSED_DOWN, INPUT_PRESSED_RIGHT, INPUT_PRESSED_HEAVY}, 4},
+            
+            .projectile = {
+                .spawn_offset  = {30.0f, -10.0f}, 
+                .traj.velocity = {200.0f, 0.0f},
+                .traj.gravity  = {0.0f, 0.0f},
+                .lifetime         = TICKS(60),
+                .anim = ANIM(false, TICKS(60), 
+                    FRAME_IMMUNE_HIT(TILE_96x96(2), TICKS(60), 4*8, 7*8,  2*8, 4*8, 16, 16)
+                )
+            },
+            .stats.damage = 20, 
+            .stats.stun_duration = TICKS(25),
+            .stats.knockback = {300.0f, -700.0f},
+            .stats.flags = ATK_FLAG_KNOCKDOWN | ATK_FLAG_WALL_BOUNCE,
 
-        //    .projectile = {.lifetime_ticks = TICKS(60), },
-
-        //    .triger = ATK_TRIGGER_ON_HIT,
-        //    .flags  = ATK_FLAG_PROJECTILE,
-        //    .sequence = {{INPUT_HOLDING_DOWN, INPUT_PRESSED_RIGHT, INPUT_PRESSED_MEDIUM}, 3}
-        //},
+            .stats.hitstop = 2,
+            
+            .startup = TICKS(5 * 3),
+            .active  = TICKS(5),
+        },
 
         // ---- SIZE 96x96 -------------------------------------------------
         .animations[STATE_POSE_VICTORY] = ANIM(true, TICKS(15 + 45),

@@ -157,7 +157,7 @@ Scrpit has a few flags like:
 - "-run" - Runs the game after compilation 
 - "-static" - Links the game statically instead of dynamically
 - "-dbg" - Compile with debug info
-- "-cc" - Change the compiler with the name of next argument
+- "-cc" - Change the compiler used but with same flags
 - "-assets-baked" - Compiles the assets into the binary 
 - "-platform" - Target a platform (default: "native"): "win32", "linux", "web"
 - "-help", "--help" - Helps you    

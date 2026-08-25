@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include "assets.h"
 #include "macros.h"
+#include "renderer.h"
 
 // -------------
 //  DECLARATION
@@ -17,6 +18,7 @@
 
 struct fighter_t;
 struct player_t;
+struct match_t;
 
 // ---------------------------
 // All states names 
@@ -42,13 +44,17 @@ X(CROUCH_MEDIUM) \
 X(CROUCH_HEAVY) \
 X(POSE_VICTORY) \
 X(POSE_DEFEAT) \
+X(DASH_FORWARD) \
+X(DASH_BACKWARD) \
 X(COMBO1) \
 X(COMBO2) \
 X(COMBO3) \
-X(DASH_FORWARD) \
-X(DASH_BACKWARD) \
+X(COMBO4) \
+X(COMBO5) \
+X(COMBO6) \
 X(SPECIAL1) \
 X(SPECIAL2) \
+X(SPECIAL3) 
 // ---------------------------
 
 /**
@@ -60,37 +66,6 @@ X(SPECIAL2) \
  * 60 tick = ~1.00 sec
  */
 #define TICKS(t) (t)
-
-typedef struct frame_t
-{
-    // Frame tile rect from the atlas
-    SDL_Rect src;
-    vec2i_t offset;
-    
-    int32_t ticks; // Amount of ticks frame will last (1 tick ~0.016 sec)
-
-    // Collision
-    uint8_t  count_hitboxs, count_hurtboxs;
-    SDL_Rect hitboxs[2],    hurtboxs[2];
-} frame_t;
-
-typedef struct animation_def_t
-{
-    frame_t frames[10];
-    int32_t frame_count;
-    int32_t total_ticks;
-    bool loop;
-} animation_def_t;  
-
-typedef struct animation_t
-{
-    const animation_def_t *animations; // Pointer to array of anims
-    int32_t id;     // Index in animations array of current animation 
-    int32_t texture;
-    int32_t duration;
-    uint16_t timer;  // current tick animation is on
-    uint16_t frame; // current frame of animation is on
-} animation_t;
 
 typedef struct input_sequence_t 
 {
@@ -108,14 +83,18 @@ typedef enum attack_id_t
     ATK_ID_CROUCH_MEDIUM,
     ATK_ID_CROUCH_HEAVY,
     ATK_ID_AIRBORNE_ATK,
+    ATK_ID_DASH_FORWARD,
+    ATK_ID_DASH_BACKWARDS,
     // Sequence move, the ones that need a comb input
     ATK_ID_COMBO1,
     ATK_ID_COMBO2,
     ATK_ID_COMBO3,
-    ATK_ID_DASH_FORWARD,
-    ATK_ID_DASH_BACKWARDS,
+    ATK_ID_COMBO4,
+    ATK_ID_COMBO5,
+    ATK_ID_COMBO6,
     ATK_ID_SPECIAL1, 
     ATK_ID_SPECIAL2,
+    ATK_ID_SPECIAL3,
     ATK_ID_COUNT
 } attack_id_t;
 
@@ -162,15 +141,20 @@ typedef struct attack_simple_t
     int32_t stun_duration, hitstop;
     attack_flags_t flags;
     // If .func == NULL then stats above are applyed
-    bool (*func)(struct fighter_t *atk, struct fighter_t *def, void *ctx);
+    bool (*func)(const struct attack_simple_t *simple, struct fighter_t *atk, struct fighter_t *def, struct match_t *ctx);
 } attack_simple_t;
+
+typedef struct trajectory_def_t
+{
+    vec2f_t velocity;
+    vec2f_t gravity;   // {0,0} = straight line, {0, +N} = arcing/falling
+} trajectory_def_t;
 
 typedef struct projectile_def_t
 {
     animation_def_t anim;
+    trajectory_def_t traj;
     vec2f_t spawn_offset; // Spawns ant player position
-        
-    SDL_Rect hitbox;
     int32_t lifetime; // How many ticks before it disappears even if no hit
 } projectile_def_t;
 
@@ -187,10 +171,30 @@ typedef struct attack_t
     float range;           // Used for ATK_TRIGGER_IN_RANGE
     vec2f_t grab_offset;   // Used for teleporting enemy into a grab
     uint8_t grab_duration; // How long the grab lasts
-    // TODO: this funcker doesnt want to work vec2f_t boost;
+    // TODO: this funcker doesnt want to work. vec2f_t boost;
     
     uint8_t startup, active; // Used for attack window
 } attack_t;
+
+typedef struct state_t
+{
+    int32_t id;     // Current state id
+    int32_t timer;    // How long has state been running 
+    int32_t duration; // if 0 then state stays forever  
+} state_t;
+
+typedef struct projectile_t
+{
+    animation_t anim;
+    pysics_t pysics;
+    trajectory_def_t traj;
+    const attack_t *attack;
+    struct fighter_t *owner;
+    
+    int32_t timer, lifetime;
+    int32_t hit_landed_at;
+    bool active;
+} projectile_t;
 
 typedef enum fighter_state_id_t
 {
@@ -202,17 +206,9 @@ typedef enum fighter_state_id_t
 
 typedef struct state_def_t
 {
-    attack_id_t    attack;        // ATK_ID_NONE if not an attack state
-    uint16_t       can_do;
+    attack_id_t attack; // ATK_ID_NONE if not an attack state
+    uint16_t    can_do;
 } state_def_t;
-
-typedef struct fighter_state_t
-{
-    int32_t id;     // Current state id
-    int32_t timer;    // How long has state been running 
-    int32_t duration; // if 0 then state stays forever  
-} fighter_state_t;
-
 
 typedef struct fighter_def_t
 {
@@ -231,12 +227,12 @@ typedef struct fighter_def_t
 typedef struct fighter_t
 {
     const fighter_def_t *def; // Fighter definition
+
+    projectile_t projectiles[10];
     
     animation_t animation;
-    
     pysics_t pysics;
-    fighter_state_t state;
-    //projectile_t projectiles[10];
+    state_t state;
     
     attack_id_t curr_attack_id;   // Current attack
     int32_t hit_landed_at;
@@ -250,17 +246,26 @@ void fighter_update_attack(fighter_t *atk, fighter_t *def, void *ctx);
 void fighter_set_state(fighter_t *fighter, fighter_state_id_t next_state);
 void fighter_update(struct player_t *player, fighter_t *fighter, float delta_time, int32_t floor_level);
 
-SDL_Rect to_world_rect(fighter_t *fighter, SDL_Rect local);
+SDL_Rect fighter_to_world_rect(fighter_t *fighter, SDL_Rect local);
 float fighter_check_overlap(fighter_t *f1, fighter_t *f2);
 
 // --------------------------------------
 void pysics_update(pysics_t *object, float delta_time, int32_t timer, int32_t floor_level);
 void pysics_facing_direction(pysics_t *obj1, pysics_t *obj2);
-void animation_update(animation_t *anim);
-void animation_change(animation_t *anim, int32_t next_anim, bool restart);
-const frame_t *animation_get_frame(animation_t *anim);
+SDL_Rect to_world_rect(pysics_t *pysics, const frame_t *frame, SDL_Rect local);
 SDL_Rect frame_rect_facing_position(const frame_t *frame, pysics_t *pysics);
+void attack_apply_simple(const attack_t *simple, fighter_t *atk, fighter_t *def, struct match_t *match);
+
+void pysics_trajectory_update(pysics_t *pysics, const trajectory_def_t *traj, int32_t timer, float delta_time);
 // -------------------------------------- 
+bool is_fighter_airborn(fighter_t *fighter);
+bool is_fighter_crouching(fighter_t *fighter);
+bool is_fighter_stuned(fighter_t *fighter);
+bool is_fighter_immune(fighter_t *fighter);
+
+void projectile_spawn(projectile_t *proj, const attack_t *attack, fighter_t *owner);
+void projectile_update(projectile_t *proj, float delta_time);
+void projectile_update_attack(projectile_t *proj, fighter_t *def, struct match_t *match);
 
 /* typedef struct fighter_state_defs_t_
 {
@@ -282,7 +287,7 @@ typedef struct state_t_
 #include "player.h"
 #include "match.h"
 
-static void fighter_update_animation(fighter_t *fighter);
+internal void fighter_update_animation(fighter_t *fighter);
 
 enum what_can_state_do_t {
     CAN_NOTHING     = 0,
@@ -300,11 +305,11 @@ enum what_can_state_do_t {
     CAN_EVERYTHING = CAN_WALK | CAN_JUMP | CAN_ATK | CAN_BLOCK | CAN_CROUCH | CAN_COMBO | CAN_DASH,
 };
 
-static const state_def_t state_defs[STATE_COUNT] = 
+global_variable const state_def_t state_defs[STATE_COUNT] = 
 {
     [STATE_IDLE]          = {ATK_ID_NONE, CAN_EVERYTHING},
-    [STATE_POSE_VICTORY]  = {ATK_ID_NONE, CAN_EVERYTHING},
-    [STATE_POSE_DEFEAT]   = {ATK_ID_NONE, CAN_EVERYTHING},
+    [STATE_POSE_VICTORY]  = {ATK_ID_NONE, CAN_NOTHING},
+    [STATE_POSE_DEFEAT]   = {ATK_ID_NONE, CAN_NOTHING},
     [STATE_WALK_FORWARD]  = {ATK_ID_NONE, CAN_EVERYTHING},
     [STATE_WALK_BACKWARD] = {ATK_ID_NONE, CAN_EVERYTHING},
     [STATE_AIRBORNE]      = {ATK_ID_NONE, CAN_ATK | CAN_COMBO},
@@ -342,19 +347,30 @@ static const state_def_t state_defs[STATE_COUNT] =
 #define FORCE_GRAVITY  900.0f // Units/sec^2 fall rate
 #define FORCE_FRICTION 0.90f  // 0 == Instatnt stop, 1 == No stop
 
-static float force_linear(float base, float rate, float time)
+void pysics_trajectory_update(pysics_t *pysics, const trajectory_def_t *traj, int32_t timer, float delta_time)
+{
+    float t = (float)timer * delta_time;
+    float dir = (pysics->facing_right) ? 1.0f : -1.0f;
+
+    pysics->position = vec2f(
+        pysics->position.x + (traj->velocity.x * dir) * t + 0.5f * (traj->gravity.x * dir) * t * t,
+        pysics->position.y + traj->velocity.y * t + 0.5f * traj->gravity.y * t * t
+    );
+}
+
+internal float force_linear(float base, float rate, float time)
 {
     return (rate * time) + base;
 }
 
-static inline bool is_fighter_airborn(fighter_t *fighter)
+inline bool is_fighter_airborn(fighter_t *fighter)
 {
     return (
         fighter->state.id == STATE_AIRBORNE  || fighter->state.id == STATE_AIRBORNE_ATK || 
         fighter->state.id == STATE_KNOCKDOWN || fighter->state.id == STATE_AIRBORNE_HITSTUN
     ); 
 }
-static inline bool is_fighter_crouching(fighter_t *fighter)
+inline bool is_fighter_crouching(fighter_t *fighter)
 {
     return (
         fighter->state.id == STATE_CROUCH       || fighter->state.id == STATE_CROUCH_BLOCK  || 
@@ -362,14 +378,14 @@ static inline bool is_fighter_crouching(fighter_t *fighter)
         fighter->state.id == STATE_CROUCH_HEAVY || fighter->state.id == STATE_CROUCH_HITSTUN
     );
 }
-static inline bool is_fighter_stuned(fighter_t *fighter)
+inline bool is_fighter_stuned(fighter_t *fighter)
 {
     return (
         fighter->state.id == STATE_STAND_HITSTUN    || fighter->state.id == STATE_CROUCH_HITSTUN ||
         fighter->state.id == STATE_AIRBORNE_HITSTUN || fighter->state.id == STATE_KNOCKDOWN 
     );
 }  
-static inline bool is_fighter_immune(fighter_t *fighter)
+inline bool is_fighter_immune(fighter_t *fighter)
 {
     return (
         fighter->state.id == STATE_KNOCKDOWN || fighter->state.id == STATE_RECOVERY
@@ -398,7 +414,6 @@ void pysics_update(pysics_t *object, float delta_time, int32_t timer, int32_t fl
     } 
 }
 
-
 void pysics_facing_direction(pysics_t *obj1, pysics_t *obj2)
 {
     obj1->facing_right = (obj1->position.x < obj2->position.x)
@@ -407,49 +422,6 @@ void pysics_facing_direction(pysics_t *obj1, pysics_t *obj2)
     obj2->facing_right = !obj1->facing_right;
 }
 
-static int32_t animation_def_total_ticks(const animation_def_t *anim)
-{
-    int32_t ticks = 0;
-    for_range_i((unsigned)anim->frame_count)
-        ticks += anim->frames[i].ticks;
-    return ticks;
-}
-
-void animation_update(animation_t *anim)
-{
-    anim->timer++;
-    
-    const animation_def_t *curr = &anim->animations[anim->id];
-    int32_t frame_timestamp = 0;
-    
-    for_range_i(anim->frame + 1)
-        frame_timestamp += curr->frames[i].ticks;
-
-    if (anim->timer >= frame_timestamp)
-    {
-        anim->frame++;
-        
-        if (anim->frame >= curr->frame_count)
-        {    
-            anim->frame =
-                (curr->loop) ? 0 : (uint16_t)curr->frame_count - 1;
-            anim->timer =
-                (curr->loop) ? 0 : (uint16_t)animation_def_total_ticks(curr) - 1;
-        }
-    }
-}
-
-void animation_change(animation_t *anim, int32_t next_anim, bool restart)
-{
-    if (anim->id != next_anim) 
-    {
-        anim->id = next_anim;
-        anim->timer = TICKS(0);
-        
-        anim->frame = (restart) ? 0 : (uint16_t)anim->animations[anim->id].frame_count - 1;
-        anim->timer = (restart) ? TICKS(0) : (uint16_t)animation_def_total_ticks(&anim->animations[anim->id]) - 1;
-    }
-}
 // Resets fighter->state_timer to 0
 void fighter_set_state(fighter_t *fighter, fighter_state_id_t next_state)
 {
@@ -472,14 +444,10 @@ void fighter_set_state(fighter_t *fighter, fighter_state_id_t next_state)
         }
     }
     
-    fighter->state.duration = (next_atk_id == ATK_ID_NONE) 
+    fighter->state.duration = (fighter->def->animations[next_state].loop) 
         ? 0 
         : fighter->def->animations[next_state].total_ticks;
     
-    // TODO: Fix the game  
-    if (next_state == STATE_RECOVERY) 
-        fighter->state.duration = fighter->def->animations[next_state].total_ticks;
-
     fighter->state.id       = (int32_t)next_state;
     fighter->curr_attack_id = next_atk_id;
     fighter->hit_landed_at  = TICKS(-1);
@@ -499,7 +467,7 @@ void fighter_update(player_t *player, fighter_t *fighter, float delta_time, int3
             fighter_set_state(fighter, STATE_IDLE);
     } else
     {    
-        if (!is_fighter_airborn(fighter))            
+        if (!is_fighter_airborn(fighter) && fighter->curr_attack_id == ATK_ID_NONE)            
             fighter_set_state(fighter, STATE_AIRBORNE);
     }
 
@@ -507,6 +475,15 @@ void fighter_update(player_t *player, fighter_t *fighter, float delta_time, int3
     const input_actions_t swaped_input = input_left_right_swap(fighter->pysics.facing_right, input); 
     const uint16_t can_fighter_do = state_defs[fighter->state.id].can_do; // What state is alowed to do
 
+    if (can_fighter_do & CAN_DASH)
+    {
+        const input_sequence_t *forw = &fighter->def->attacks[ATK_ID_DASH_FORWARD].sequence;
+        const input_sequence_t *back = &fighter->def->attacks[ATK_ID_DASH_BACKWARDS].sequence;
+        
+        if (player_check_combo(player, forw)) fighter_set_state(fighter, STATE_DASH_FORWARD);
+        if (player_check_combo(player, back)) fighter_set_state(fighter, STATE_DASH_BACKWARD);
+    }
+    
     // ---- JUMP ------------------------------------------------------------------------
     if (can_fighter_do & CAN_JUMP && input & INPUT_PRESSED_UP)
     {
@@ -524,12 +501,7 @@ void fighter_update(player_t *player, fighter_t *fighter, float delta_time, int3
         for (uint32_t state = STATE_COMBO1; state < STATE_COUNT; state++)
         {
             attack_id_t combo_id = state_defs[state].attack;
-            assert(combo_id != ATK_ID_NONE && "You didnt acount for state_defs");
-
-            if ((combo_id == ATK_ID_DASH_BACKWARDS || 
-                combo_id == ATK_ID_DASH_FORWARD) &&
-                (!(can_fighter_do & CAN_DASH))
-            ) continue;
+            //assert(combo_id != ATK_ID_NONE && "You didnt acount for state_defs");
 
             if (player_check_combo(player, &fighter->def->attacks[combo_id].sequence))
             {
@@ -726,8 +698,12 @@ state_machine:;
         case STATE_COMBO1:
         case STATE_COMBO2:
         case STATE_COMBO3:
+        case STATE_COMBO4:
+        case STATE_COMBO5:
+        case STATE_COMBO6:
         case STATE_SPECIAL1:
         case STATE_SPECIAL2:
+        case STATE_SPECIAL3:
         case STATE_RECOVERY:
         {
             if (!is_state_active)
@@ -743,9 +719,16 @@ state_machine:;
     }
     // Animation update
     fighter_update_animation(fighter);
+    
+    // Update the projectiles 
+    for_range_i(lenghtof(fighter->projectiles))
+    {
+        if (fighter->projectiles[i].active)
+            projectile_update(&fighter->projectiles[i], delta_time);
+    }
 }
 
-static void fighter_update_animation(fighter_t *fighter)
+internal void fighter_update_animation(fighter_t *fighter)
 {
     animation_update(&fighter->animation);
         
@@ -777,27 +760,6 @@ static void fighter_update_animation(fighter_t *fighter)
     animation_change(&fighter->animation, (int32_t)next_anim, restart);
 }
 
-const frame_t *animation_get_frame(animation_t *anim)
-{
-    return &anim->animations[anim->id].frames[anim->frame];
-}
-
-/* bool frame_check_hit(frame_t *fr_atk, frame_t *fr_def)
-{
-    for_range_i(fr_atk->count_hitboxs)
-    {
-        const SDL_Rect hit = to_world_rect(atk, fr_atk->hitboxs[i]);
-
-        for_range_j(fr_def->count_hurtboxs)
-        {
-            const SDL_Rect hurt = to_world_rect(def, fr_def->hurtboxs[j]);
-
-            if (SDL_HasIntersection(&hit, &hurt))
-                return true;
-        }
-    }
-} */
-
 SDL_Rect frame_rect_facing_position(const frame_t *frame, pysics_t *pysics)
 {
     SDL_Rect rect;
@@ -813,24 +775,22 @@ SDL_Rect frame_rect_facing_position(const frame_t *frame, pysics_t *pysics)
     return rect;
 }
 
-SDL_Rect to_world_rect(fighter_t *fighter, SDL_Rect local)
+SDL_Rect to_world_rect(pysics_t *pysics, const frame_t *frame, SDL_Rect local)
 {
-    const frame_t *frame = animation_get_frame(&fighter->animation);
-
     // top-left corner of the sprite in world space
     float sprite_left, sprite_top;
 
-    if (fighter->pysics.facing_right)
-        sprite_left = fighter->pysics.position.x - (float)frame->offset.x;
+    if (pysics->facing_right)
+        sprite_left = pysics->position.x - (float)frame->offset.x;
     else
         // flipped: offset_x measured from right edge instead
-        sprite_left = fighter->pysics.position.x - (float)(frame->src.w - frame->offset.x);
+        sprite_left = pysics->position.x - (float)(frame->src.w - frame->offset.x);
 
-    sprite_top = fighter->pysics.position.y - (float)frame->offset.y;
+    sprite_top = pysics->position.y - (float)frame->offset.y;
 
     SDL_Rect world;
 
-    if (fighter->pysics.facing_right)
+    if (pysics->facing_right)
     {
         world.x = (int32_t)sprite_left + local.x;
     }
@@ -848,18 +808,40 @@ SDL_Rect to_world_rect(fighter_t *fighter, SDL_Rect local)
     return world;
 }
 
-static bool fighter_check_hit(fighter_t *atk, fighter_t *def)
+SDL_Rect fighter_to_world_rect(fighter_t *fighter, SDL_Rect local)
+{
+    return to_world_rect(&fighter->pysics, animation_get_frame(&fighter->animation), local);
+}
+
+internal bool frames_check_hit(pysics_t *pysics1, const frame_t *frame1, pysics_t *pysics2, const frame_t *frame2)
+{   
+    for_range_i(frame1->count_hitboxs)
+    {
+        const SDL_Rect hit = to_world_rect(pysics1, frame1, frame1->hitboxs[i]);
+
+        for_range_j(frame2->count_hurtboxs)
+        {
+            const SDL_Rect hurt = to_world_rect(pysics2, frame2, frame2->hurtboxs[i]);
+
+            if (SDL_HasIntersection(&hit, &hurt))
+                return true;
+        }
+    }
+    return false;
+}
+
+internal bool fighter_check_hit(fighter_t *atk, fighter_t *def)
 {
     const frame_t *col_atk = animation_get_frame(&atk->animation);
     const frame_t *col_def = animation_get_frame(&def->animation);
 
     for_range_i(col_atk->count_hitboxs)
     {
-        const SDL_Rect hit = to_world_rect(atk, col_atk->hitboxs[i]);
+        const SDL_Rect hit = fighter_to_world_rect(atk, col_atk->hitboxs[i]);
 
         for_range_j(col_def->count_hurtboxs)
         {
-            const SDL_Rect hurt = to_world_rect(def, col_def->hurtboxs[j]);
+            const SDL_Rect hurt = fighter_to_world_rect(def, col_def->hurtboxs[j]);
 
             if (SDL_HasIntersection(&hit, &hurt))
                 return true;
@@ -876,11 +858,11 @@ float fighter_check_overlap(fighter_t *f1, fighter_t *f2)
 
     for_range_i(f1_col->count_hurtboxs)
     {
-        const SDL_Rect f1_hurt = to_world_rect(f1, f1_col->hurtboxs[i]);
+        const SDL_Rect f1_hurt = fighter_to_world_rect(f1, f1_col->hurtboxs[i]);
 
         for_range_j(f2_col->count_hurtboxs)
         {
-            const SDL_Rect f2_hurt = to_world_rect(f2, f2_col->hurtboxs[j]);
+            const SDL_Rect f2_hurt = fighter_to_world_rect(f2, f2_col->hurtboxs[j]);
             
             if (SDL_HasIntersection(&f1_hurt, &f2_hurt)) 
             {
@@ -899,16 +881,71 @@ float fighter_check_overlap(fighter_t *f1, fighter_t *f2)
     return 0.0f;
 }
 
-// TODO: Make this used for fighters and projectile because 
-// this func is going set .hit_landed_at = timer and  
-// to apply recoil to owner of a projectile
-static void attack_apply_simple(const attack_t *simple, fighter_t *atk, fighter_t *def, void *ctx)
+// ---- PROJECTILES ------------------------------------------------------
+void projectile_spawn(projectile_t *proj, const attack_t *attack, fighter_t *owner)
+{
+    *proj = (projectile_t)
+    {
+        .active   = true,
+        .attack   = attack,
+        .owner    = owner,
+        .lifetime = attack->projectile.lifetime,
+        .traj     = attack->projectile.traj,
+        .hit_landed_at = TICKS(-1),
+        
+        .pysics.facing_right = owner->pysics.facing_right,
+        .pysics.position = 
+            vec2f_add(owner->pysics.position, 
+                vec2f_mul(attack->projectile.spawn_offset, (owner->pysics.facing_right) 
+                    ? vec2f(1.0f, 1.0f)
+                    : vec2f(-1.0f, 1.0f)
+                )
+            ),
+        
+        // Animations
+        .anim.texture    = owner->animation.texture,
+        .anim.animations = &attack->projectile.anim,
+        .anim.duration   = animation_def_total_ticks(&attack->projectile.anim),
+    };
+}
+
+void projectile_update(projectile_t *proj, float delta_time)
+{
+    if (proj->timer >= proj->lifetime) proj->active = false;
+    proj->timer++;
+
+    // Pysics
+    pysics_trajectory_update(&proj->pysics, &proj->traj, proj->timer, delta_time);
+
+    // Animation
+    animation_update(&proj->anim);
+}
+
+void projectile_update_attack(projectile_t *proj, fighter_t *def, match_t *match)
+{
+    if (!proj->attack) return;
+
+    bool hit = frames_check_hit(
+        &proj->pysics, animation_get_frame(&proj->anim), 
+        &def->pysics,  animation_get_frame(&def->animation)
+    );
+
+    if ((proj->hit_landed_at == TICKS(-1)) && hit)
+    {
+        assert(proj->attack->kind == ATK_KIND_PROJECTILE && "Uncompatibile attack kind");
+        attack_apply_simple(proj->attack, proj->owner, def, match);
+        proj->hit_landed_at = proj->timer;
+        proj->active = false;
+    }
+}
+
+void attack_apply_simple(const attack_t *simple, fighter_t *atk, fighter_t *def, match_t *match)
 {
     const attack_simple_t *attack = &simple->stats;
     
     if (attack->func)
     {
-        attack->func(atk, def, ctx); 
+        attack->func(attack, atk, def, match); 
         return;
     }
     // Attack context
@@ -941,18 +978,27 @@ static void attack_apply_simple(const attack_t *simple, fighter_t *atk, fighter_
     def->pysics.velocity = knockback;
     def->ragebait_meter += def_ragebait;
 
-    atk->hit_landed_at   = atk->state.timer;
     atk->pysics.velocity = recoil;
     atk->ragebait_meter += atk_ragebait; 
+
+    //match_palyer_info_t *atk_info = (&match->p1->fighter == atk) ? &match->f1 : &match->f2;
+    match_palyer_info_t *def_info = (&match->p1->fighter == def) ? &match->f1 : &match->f2;
+    
+    if (!blocked) { def_info->blocked = false; def_info->was_hit = true; } 
+    else          { def_info->blocked = true; def_info->was_hit = false; }
+
+    const frame_t *frame = animation_get_frame(&atk->animation);
+    def_info->hit_position_y = 
+        def->pysics.position.y - fabsf((float)(frame->offset.y - (frame->hitboxs[0].y + (frame->hitboxs[0].h / 2))));
 
     if (!blocked)
     {
         def->active_stun = attack->stun_duration;
-        if (ctx != NULL)
-        {
-            match_t *match = (match_t *)ctx;
-            match->hitstop = attack->hitstop; 
-        }
+        // Match context  
+        match->hitstop = attack->hitstop;
+
+        if (attack->flags & ATK_FLAG_WALL_BOUNCE)
+            def_info->wall_bouncing = true;
 
         if (attack->flags & ATK_FLAG_KNOCKDOWN) fighter_set_state(def, STATE_KNOCKDOWN);
         else
@@ -993,10 +1039,11 @@ void fighter_update_attack(fighter_t *atk, fighter_t *def, void *ctx)
 
         case ATK_TRIGGER_IN_RANGE:
         {
-            vec2f_t dist = vec2f_sub(atk->pysics.position, def->pysics.position);
+            vec2f_t dist = vec2f_sub(def->pysics.position, atk->pysics.position);
             dist.x = fabsf(dist.x); 
             dist.y = fabsf(dist.y);
-            trigger = (attack->range >= dist.x || attack->range >= dist.y);
+
+            trigger = (attack->range >= dist.x && attack->range >= dist.y);
             break;
         }
     }
@@ -1007,7 +1054,10 @@ void fighter_update_attack(fighter_t *atk, fighter_t *def, void *ctx)
         {
             // Attack applyed only once
             if (atk->hit_landed_at == TICKS(-1) && trigger)
+            {
                 attack_apply_simple(attack, atk, def, ctx);
+                atk->hit_landed_at = atk->state.timer;
+            }
             break;
         }
         case ATK_KIND_MULTIHIT:
@@ -1015,16 +1065,29 @@ void fighter_update_attack(fighter_t *atk, fighter_t *def, void *ctx)
             bool is_last_hit = (tick == (attack->startup + attack->active - 1));
             
             if (is_last_hit && trigger)
+            {
                 attack_apply_simple(attack, atk ,def, ctx);
-
+                atk->hit_landed_at = atk->state.timer;
+            }
             else if ((tick % attack->multihit_interval == 0) && trigger)
+            {
                 attack_apply_simple(attack, atk ,def, ctx);
+                atk->hit_landed_at = atk->state.timer;
+            }
             break;
         }
         case ATK_KIND_GRAB:
         {
             // TODO: Decide if enemy could be grabbed while attacking 
-            if (!is_fighter_stuned(def) && !is_fighter_immune(def) && trigger)
+            if (!is_fighter_stuned(def) && !is_fighter_immune(def) && trigger && atk->hit_landed_at == TICKS(-1))
+            {
+                fighter_set_state(def, STATE_AIRBORNE_HITSTUN);
+                def->active_stun   = attack->grab_duration;
+                atk->state.timer  -= attack->grab_duration;
+                atk->hit_landed_at = tick;
+            }
+            
+            if (atk->hit_landed_at != TICKS(-1))
             {
                 vec2f_t offset = (atk->pysics.facing_right) 
                     ? attack->grab_offset
@@ -1032,19 +1095,35 @@ void fighter_update_attack(fighter_t *atk, fighter_t *def, void *ctx)
                 
                 // Teleports defender to grab position
                 def->pysics.position = vec2f_add(atk->pysics.position, offset);
-
-                fighter_set_state(def, STATE_AIRBORNE_HITSTUN);
-                def->active_stun = attack->grab_duration;
-            
-                if (atk->state.timer >= attack->grab_duration && atk->hit_landed_at == TICKS(-1))
-                    attack_apply_simple(attack, atk, def, ctx);
+                
+                if (atk->state.timer >= (atk->state.duration - 1))
+                    attack_apply_simple(attack, atk, def, ctx); 
             }
             break;
         }
         case ATK_KIND_DASH:
         {
             if (atk->hit_landed_at == TICKS(-1) && trigger)
+            {
                 attack_apply_simple(attack, atk, def, ctx);
+                atk->hit_landed_at = atk->state.timer;
+            }
+            break;
+        }
+        case ATK_KIND_PROJECTILE: 
+        {
+            if (atk->hit_landed_at == TICKS(-1))
+            {    
+                for_range_i(lenghtof(atk->projectiles))
+                {
+                    if (!atk->projectiles[i].active)
+                    {
+                        projectile_spawn(&atk->projectiles[i], attack, atk);
+                        atk->hit_landed_at = tick;
+                        break;
+                    }
+                }
+            }    
             break;
         }
     }

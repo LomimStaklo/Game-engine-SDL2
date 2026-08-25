@@ -19,7 +19,7 @@
 
 typedef enum platform_t 
 {
-    PLATFORM_WIN32 = 0, 
+    PLATFORM_WIN32 = 0,
     PLATFORM_LINUX, // Aka. Posix
     PLATFORM_WEB,
 #ifdef _WIN32
@@ -77,7 +77,7 @@ int main(int argc, char **argv)
                 " -run                       Runs the executable when it gets compiled.\n"
                 " -assets-baked              Compiles the assets into the binary.\n"
                 " -platform <platform>       Target a platform (default: 'native'): 'win32', 'linux', 'web'.\n"
-                " -cc <compiler>             Change the compiler with the name of next argument.\n"
+                " -cc <compiler>             Change the compiler used but with same flags.\n"
                 " -static                    Links the game statically instead of dynamically.\n"
                 " -dbg                       Compile with debug info.\n"
                 " -help, --help              Brings up this.\n\n"
@@ -90,7 +90,8 @@ int main(int argc, char **argv)
     // ---- ASSET BAKING ----------------------------------------------------------
     if (do_assets_baked)
     {
-        const char *src_paths[] = {
+        const char *src_paths[] = 
+        {
         #define X(name, type, path) path,
             ASSET_XLIST
         #undef X

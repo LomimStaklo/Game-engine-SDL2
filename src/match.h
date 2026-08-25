@@ -4,13 +4,22 @@
 #include <stdint.h>
 #include "assets.h"
 #include "camera.h"
+#include "player.h" 
 
 struct renderer_t;
 struct player_t;
 
+typedef struct stage_t 
+{
+    int32_t w, h; // Width & Height of stage
+    int32_t texture;
+    int32_t floor_level;
+} stage_t;
+
 typedef struct match_resurces_t
 {
-    int32_t ui, p1_atlas, p2_atlas, stage; 
+    int32_t ui;
+    stage_t stage; 
 } match_resurces_t;
 
 typedef struct match_palyer_info_t
@@ -18,8 +27,11 @@ typedef struct match_palyer_info_t
     int32_t score;
     int32_t base_hp; // HP default of fighters 
     float   percent_hp;  // HP in %
+    bool    was_hit; // Has attack landed
+    float   hit_position_y; // Uesd for correct sparcks position
+    bool    blocked; // Has attack been blocked
     bool    walled;
-    bool    walled_;
+    bool    wall_bouncing; // if true the palyer will get bounced if it gets walled 
 } match_palyer_info_t;
 
 typedef enum match_state_t 
@@ -42,29 +54,56 @@ typedef struct match_t
     int32_t rounds;
 
     camera_t camera;
-    vec2i_t stage_size;
-
-    match_resurces_t textures;
+    match_resurces_t res;
     
     int32_t hitstop;
     // Palyer starts
     struct player_t *p1, *p2;
     match_palyer_info_t f1, f2;
+    // NOTE: Used for landing particle for now
+    struct {
+        animated_object_t items[4];
+        uint8_t count;
+    } particles;
 } match_t;
 
 #define FLOOR_MARGINE 30
+#define WALL_MARGINE  30
+#define UI_TILE_SIZE  64 
+#define UI_TILE(idx) tile_from_atlas(idx, UI_TILE_SIZE, UI_TILE_SIZE, 8) 
 
 match_t match_start(renderer_t *renderer, float duration, int32_t rounds, struct player_t *p1, struct player_t *p2, match_resurces_t *textures);
 void match_update(match_t *match, float delta_time);
 void match_render(const match_t *match, struct renderer_t *renderer);
 
+stage_t stage_load(renderer_t *renderer, asset_name_t stage);
+void stage_unload(renderer_t *renderer, stage_t *stage);
+
 #ifdef MATCH_IMPLEMENTATION
 #include "renderer.h"
-#include "player.h" 
 #include "characters.h"
+
+// TODO: Move to somewhere good, or even better get gud
+global_variable animation_def_t match_ui_attack_sparcle_anim[2] = 
+{
+    // Succesfull land
+    [0] = ANIM(false, TICKS(6),
+        FRAME_IMMUNE(UI_TILE(8),  TICKS(2), UI_TILE_SIZE/2, UI_TILE_SIZE/2),
+        FRAME_IMMUNE(UI_TILE(9),  TICKS(3), UI_TILE_SIZE/2, UI_TILE_SIZE/2),
+        FRAME_IMMUNE(UI_TILE(10), TICKS(1), UI_TILE_SIZE/2, UI_TILE_SIZE/2),
+    ),
+    // Blocked attack
+    [1] = ANIM(false, TICKS(6),
+        FRAME_IMMUNE(UI_TILE(11), TICKS(4), UI_TILE_SIZE/2, UI_TILE_SIZE/2),
+        FRAME_IMMUNE(UI_TILE(12), TICKS(5), UI_TILE_SIZE/2, UI_TILE_SIZE/2),
+        FRAME_IMMUNE(UI_TILE(13), TICKS(2), UI_TILE_SIZE/2, UI_TILE_SIZE/2),
+    )
+};
 
 match_t match_start(renderer_t *renderer, float duration, int32_t rounds, player_t *p1, player_t *p2, match_resurces_t *textures)
 {
+    (void)renderer;
+
     match_t match = 
     {
         .state = MATCH_STATE_START,
@@ -73,7 +112,7 @@ match_t match_start(renderer_t *renderer, float duration, int32_t rounds, player
         .rounds         = rounds,
         .p1 = p1, .p2 = p2,
         
-        .textures = *textures,
+        .res = *textures,
 
         .f1.base_hp = p1->fighter.hp,
         .f2.base_hp = p2->fighter.hp,
@@ -82,27 +121,74 @@ match_t match_start(renderer_t *renderer, float duration, int32_t rounds, player
         .f2.percent_hp = 1.0f,
     };
 
-    renderer_texture_size(
-        renderer, match.textures.stage,
-        &match.stage_size.x, &match.stage_size.y
-    );
-
-    match.p1->fighter.pysics.position.x = (SCREEN_WIDTH / 2) - 20;
-    match.p1->fighter.pysics.position.y = SCREEN_HEIGHT / 2;
+    match.p1->fighter.pysics.position.x = (float)(match.res.stage.w / 2) - 50;
+    match.p1->fighter.pysics.position.y = (float)SCREEN_HEIGHT / 2;
     
-    match.p2->fighter.pysics.position.x = (SCREEN_WIDTH / 2) + 20;
-    match.p2->fighter.pysics.position.y = SCREEN_HEIGHT / 2;
+    match.p2->fighter.pysics.position.x = (float)(match.res.stage.w / 2) + 50;
+    match.p2->fighter.pysics.position.y = (float)SCREEN_HEIGHT / 2;
 
     return match;
 }
 
-static void match_set_state(match_t *match, match_state_t state)
+internal void match_set_state(match_t *match, match_state_t state)
 {
     match->state = state; 
     match->state_timer = 0.0f;
 }
 
-static void match_enforce_rules(match_t *match, bool record_input, float delta_time)
+internal void match_fighter_apply_events(match_t *match, fighter_t *fighter, match_palyer_info_t *info)
+{
+    // Wall bouncing logic
+    info->walled = !is_in_range(
+        (match->camera.view.x) + WALL_MARGINE, 
+        (match->camera.view.x + match->camera.view.w) - WALL_MARGINE, 
+        fighter->pysics.position.x
+    );
+
+    if (info->wall_bouncing) 
+    {
+        if (info->walled)
+        {
+            info->wall_bouncing = false;
+            
+            camera_shake_trigger(&match->camera, 10.0f, 0.5f);
+            fighter->pysics.velocity.x *= -1.0f;    
+        }
+        if (!is_fighter_stuned(fighter))
+            info->wall_bouncing = false;
+    }
+
+    fighter->pysics.position.x = 
+        SDL_clamp(fighter->pysics.position.x, 
+            (float)match->camera.view.x, 
+            (float)(match->camera.view.x + match->camera.view.w)
+    );
+
+    // Spwan attacking sparcks
+    if (info->blocked | info->was_hit) {
+        int32_t anim_id = info->blocked ? 1 : 0; 
+        info->blocked = false;
+        info->was_hit = false;
+
+        animated_object_t anim_obj = {
+            .position     = vec2f(fighter->pysics.position.x, info->hit_position_y),
+            .facing_right = fighter->pysics.facing_right, 
+        };
+        animation_init(&anim_obj.anim, match->res.ui, &match_ui_attack_sparcle_anim[anim_id]);
+        stack_push(&match->particles, anim_obj);   
+    }
+
+    // Update sparcks
+    for_range_i(match->particles.count)
+    {
+        if (match->particles.items[i].anim.timer < match->particles.items[i].anim.duration)
+            animation_update(&match->particles.items[i].anim);
+        else
+            stack_pop_unordered_at(&match->particles, i);
+    }
+}
+
+internal void match_enforce_rules(match_t *match, bool record_input, float delta_time)
 {
     // Fighters allways facing each other
     fighter_t *f1 = &match->p1->fighter;
@@ -132,34 +218,15 @@ static void match_enforce_rules(match_t *match, bool record_input, float delta_t
             : 0.5f;
         float f2_pushed = 1.0f - f1_pushed;
 
-        bool p1_walled = (
-            f1->pysics.position.x <= (float)match->camera.view.x + 10.0f ||  
-            f1->pysics.position.x >= (float)(match->camera.view.x + match->camera.view.w) - 10.0f
-        );
-        
-        bool p2_walled = (
-            f2->pysics.position.x <= (float)match->camera.view.x + 10.0f || 
-            f2->pysics.position.x >= (float)(match->camera.view.x + match->camera.view.w) - 10.0f
-        );
-    
-        if (p1_walled)      { f1_pushed = 0.0f; f2_pushed = 1.0f; }
-        else if (p2_walled) { f1_pushed = 1.0f; f2_pushed = 0.0f; }
+        if (match->f1.walled)      { f1_pushed = 0.0f; f2_pushed = 1.0f; }
+        else if (match->f2.walled) { f1_pushed = 1.0f; f2_pushed = 0.0f; }
 
         f1->pysics.position.x +=  (dir * overlap * f1_pushed);
         f2->pysics.position.x += -(dir * overlap * f2_pushed);
     }
     
-    // Prevent walking off screen  
-    f1->pysics.position.x = 
-        SDL_clamp(f1->pysics.position.x, 
-            (float)match->camera.view.x + 10.0f, 
-            (float)(match->camera.view.x + match->camera.view.w) - 10.0f
-    );
-    f2->pysics.position.x = 
-        SDL_clamp(f2->pysics.position.x, 
-            (float)match->camera.view.x + 10.0f, 
-            (float)(match->camera.view.x + match->camera.view.w) - 10.0f
-    );
+    match_fighter_apply_events(match, f1, &match->f1);
+    match_fighter_apply_events(match, f2, &match->f2);
 }
 
 void match_update(match_t *match, float delta_time)
@@ -172,27 +239,26 @@ void match_update(match_t *match, float delta_time)
     camera_update(
         &match->camera, 
         &p1->fighter.pysics, &p2->fighter.pysics, 
-        match->stage_size, 
+        vec2i(match->res.stage.w, match->res.stage.h), 
         delta_time
     );
 
-    int32_t floor_level = match->stage_size.y - FLOOR_MARGINE;
     match_enforce_rules(match, true, delta_time);
 
     float dt = (match->state == MATCH_STATE_END) ? delta_time / 2 : delta_time; 
-    fighter_update(p1, &p1->fighter, dt, floor_level);
-    fighter_update(p2, &p2->fighter, dt, floor_level);
+    if (match->hitstop > 0)
+    {
+        match->hitstop--;
+        return;
+    }
 
+    fighter_update(p1, &p1->fighter, dt, match->res.stage.floor_level);
+    fighter_update(p2, &p2->fighter, dt, match->res.stage.floor_level);
+    
     switch (match->state)
     {
         case MATCH_STATE_PLAY:
         {
-            if (match->hitstop > 0)
-            {
-                match->hitstop--;
-                return;
-            }
-
             match->round_timer -= delta_time;
 
             match->f1.percent_hp = ((float)p1->fighter.hp / (float)match->f1.base_hp);
@@ -227,7 +293,15 @@ void match_update(match_t *match, float delta_time)
             
             fighter_update_attack(&p1->fighter, &p2->fighter, match);
             fighter_update_attack(&p2->fighter, &p1->fighter, match);
+            
+            for_range_i(lenghtof(p1->fighter.projectiles))
+            {
+                if (p1->fighter.projectiles[i].active) 
+                    projectile_update_attack(&p1->fighter.projectiles[i], &p2->fighter, match);
 
+                if (p2->fighter.projectiles[i].active) 
+                    projectile_update_attack(&p2->fighter.projectiles[i], &p1->fighter, match);
+            }
             break;
         }
         case MATCH_STATE_START:
@@ -302,8 +376,7 @@ void match_update(match_t *match, float delta_time)
     }
 } 
 
-static void draw_dbg_boxes(renderer_t *r, fighter_t *f, SDL_Color c, SDL_Rect view);
-static void draw_ui_overlay(const match_t *match, renderer_t *renderer);
+internal void draw_ui_overlay(const match_t *match, renderer_t *renderer);
 
 void match_render(const match_t *match, renderer_t *renderer)
 {
@@ -312,13 +385,30 @@ void match_render(const match_t *match, renderer_t *renderer)
 
     draw_ui_overlay(match, renderer);
 
-    static char buff[128] = "";
-    static char nih[8] = "";
+    if (p2->fighter.curr_attack_id != ATK_ID_NONE) {
+        renderer_draw_fighter(renderer, &p1->fighter, match->camera.view, match->res.stage.floor_level);
+        renderer_draw_fighter(renderer, &p2->fighter, match->camera.view, match->res.stage.floor_level);
+    } else
+    {
+        renderer_draw_fighter(renderer, &p2->fighter, match->camera.view, match->res.stage.floor_level);
+        renderer_draw_fighter(renderer, &p1->fighter, match->camera.view, match->res.stage.floor_level);
+    }
+    // projectile rendereing
+    for_range_i(lenghtof(p1->fighter.projectiles))
+    {
+        if (p1->fighter.projectiles[i].active)
+            renderer_draw_projectile(renderer, &p1->fighter.projectiles[i], match->camera.view, match->res.stage.floor_level);
+        
+        if (p2->fighter.projectiles[i].active)
+            renderer_draw_projectile(renderer, &p2->fighter.projectiles[i], match->camera.view, match->res.stage.floor_level);
+    }
 
-    // --- BAR -----
-    snprintf(nih, sizeof(nih), "%02d", (int32_t)match->round_timer);
-    renderer_draw_text(renderer, LAYER_UI1, nih, (SCREEN_WIDTH / 2) - 18, 40, 20, 20, COLOR_WHITE);
-
+    for_range_i(match->particles.count)
+    {
+        renderer_draw_animation(renderer, LAYER_UI1, &match->particles.items[i], match->camera.view);
+    }
+    
+    //static char buff[128] = "";
     //#define X(name) (p1->fighter.state.id == STATE_##name) ? #name :     
     //snprintf(buff, sizeof(buff), 
     //    "\n\n\nP1:%f       P2:%f\n%s\nDUR:%d TICK:%d", 
@@ -329,77 +419,109 @@ void match_render(const match_t *match, renderer_t *renderer)
     //    p1->fighter.state.timer
     //);
     //#undef X
-    
-    renderer_draw_text(renderer, LAYER_UI1, (const char *)buff, 21, 21, 20, 20, COLOR_BLACK);
-    renderer_draw_text(renderer, LAYER_UI1, (const char *)buff, 20, 20, 20, 20, COLOR_WHITE);
-
-    draw_dbg_boxes(renderer, &p1->fighter, COLOR_RED, match->camera.view); 
-    draw_dbg_boxes(renderer, &p2->fighter, COLOR_BLUE, match->camera.view);
-    
-    if (p2->fighter.curr_attack_id != ATK_ID_NONE) {
-        renderer_draw_fighter(renderer, &p1->fighter, match->camera.view, match->stage_size.y - FLOOR_MARGINE);
-        renderer_draw_fighter(renderer, &p2->fighter, match->camera.view, match->stage_size.y - FLOOR_MARGINE);
-    } else
-    {
-        renderer_draw_fighter(renderer, &p2->fighter, match->camera.view, match->stage_size.y - FLOOR_MARGINE);
-        renderer_draw_fighter(renderer, &p1->fighter, match->camera.view, match->stage_size.y - FLOOR_MARGINE);
-    }
-    // projectile rendereing
-    //for_range_i(lenghtof(p1->fighter.projectiles))
-    //{
-    //    if (p1->fighter.projectiles[i].active)
-    //        renderer_draw_projectile(renderer, &p1->fighter.projectiles[i]);
-    //    
-    //    if (p2->fighter.projectiles[i].active)
-    //        renderer_draw_projectile(renderer, &p2->fighter.projectiles[i]);
-    //}
+    //renderer_draw_text(renderer, LAYER_UI1, (const char *)buff, 21, 21, 20, 20, COLOR_BLACK);
+    //renderer_draw_text(renderer, LAYER_UI1, (const char *)buff, 20, 20, 20, 20, COLOR_WHITE);
 }
 
-static void draw_ui_overlay(const match_t *match, renderer_t *renderer)
+internal void draw_relative_texture_width(
+    renderer_t *renderer, 
+    render_layer_t layer,
+    texture_handle_t handle,
+    const SDL_Rect *src, 
+    const SDL_Rect *dst, 
+    float percentage)
+{
+    SDL_Rect src_re = *src; 
+    SDL_Rect dst_re = *dst;
+    src_re.w = (int32_t)((float)src_re.w * percentage);
+    dst_re.w = (int32_t)((float)dst_re.w * percentage);
+
+    renderer_draw_texture(
+        renderer, 
+        layer, 
+        handle, 
+        &src_re,
+        &dst_re,
+        0.0, 
+        SDL_FLIP_NONE
+    );
+}
+
+internal void draw_ui_overlay(const match_t *match, renderer_t *renderer)
 {
     // Index position in 'ui_bar' atlas
-    SDL_Rect GEAR    = tile_from_atlas(0, 96, 96, 4);
-    SDL_Rect END_BAR = tile_from_atlas(1, 96, 96, 4);
-    SDL_Rect BAR     = tile_from_atlas(2, 96, 96, 4);
-    SDL_Rect KEBAB   = tile_from_atlas(3, 96, 96, 4);
-    
-    SDL_Rect end_bar1 = {0, 0, 96, 96};
-    
+    SDL_Rect GEAR    = UI_TILE(0);
+    SDL_Rect END_BAR = UI_TILE(1);
+    SDL_Rect BAR     = UI_TILE(2);
+    SDL_Rect KEBAB   = UI_TILE(3);
+    SDL_Rect RAGEBAIT_METER = UI_TILE(4);
+
+    SDL_Rect rage_dst = {0, SCREEN_HEIGHT - UI_TILE_SIZE, UI_TILE_SIZE, UI_TILE_SIZE};
+
+    draw_relative_texture_width(
+        renderer, 
+        LAYER_UI1,
+        match->res.ui,
+        &RAGEBAIT_METER, 
+        &rage_dst, 
+        SDL_clamp((float)match->p1->fighter.ragebait_meter / 300.0f, 0.0f, 1.0f)
+    );
+
+    SDL_Rect end_bar1 = {0, 0, UI_TILE_SIZE, UI_TILE_SIZE};
+
     renderer_draw_texture(
         renderer, 
         LAYER_UI1, 
-        match->textures.ui, 
+        match->res.ui, 
         &END_BAR,
         &end_bar1,
         0.0, 
         SDL_FLIP_NONE
     );
 
-    SDL_Rect bar = {96, 0, SCREEN_WIDTH - 192, 96}; 
+    SDL_Rect bar = {UI_TILE_SIZE, 0, SCREEN_WIDTH - (UI_TILE_SIZE * 2), UI_TILE_SIZE}; 
 
     renderer_draw_texture(
         renderer, 
         LAYER_UI1, 
-        match->textures.ui, 
+        match->res.ui, 
         &BAR,
         &bar,
         0.0, 
         SDL_FLIP_NONE
     );
 
-    SDL_Rect end_bar2 = {bar.x + bar.w, 0, 96, 96};
-    
+    SDL_Rect end_bar2 = {bar.x + bar.w, 0, UI_TILE_SIZE, UI_TILE_SIZE};
     renderer_draw_texture(
         renderer, 
         LAYER_UI1, 
-        match->textures.ui, 
+        match->res.ui, 
         &END_BAR,
         &end_bar2,
         0.0, 
         SDL_FLIP_HORIZONTAL
     );
 
-    SDL_Rect p1_kebab_bar = {96 - 72, 0, (SCREEN_WIDTH / 2) - 144 + 64, 96};
+    // GEAR
+    SDL_Rect gear = {
+        (SCREEN_WIDTH / 2) - (UI_TILE_SIZE / 2),
+        0,
+        UI_TILE_SIZE,
+        UI_TILE_SIZE
+    };
+
+    renderer_draw_texture(
+        renderer, 
+        LAYER_UI1, 
+        match->res.ui, 
+        &GEAR,
+        &gear,
+        0.0, 
+        SDL_FLIP_NONE
+    );
+    
+    
+    SDL_Rect p1_kebab_bar = {UI_TILE_SIZE, 0, gear.x - UI_TILE_SIZE, UI_TILE_SIZE};
     
     float offset1 = match->f1.percent_hp < 0.0f ? 0.0f : match->f1.percent_hp;
     
@@ -409,31 +531,14 @@ static void draw_ui_overlay(const match_t *match, renderer_t *renderer)
     renderer_draw_texture(
         renderer, 
         LAYER_UI1, 
-        match->textures.ui, 
+        match->res.ui, 
         &KEBAB,
         &p1_kebab_bar,
         0.0, 
         SDL_FLIP_NONE
     );
 
-    SDL_Rect gear = {
-        (SCREEN_WIDTH / 2) - 48,
-        0,
-        96,
-        96
-    };
-
-    renderer_draw_texture(
-        renderer, 
-        LAYER_UI1, 
-        match->textures.ui, 
-        &GEAR,
-        &gear,
-        0.0, 
-        SDL_FLIP_NONE
-    );
-
-    SDL_Rect p2_kebab_bar = {gear.x + gear.w, 0, (SCREEN_WIDTH / 2) - 144 + 64, 96};
+    SDL_Rect p2_kebab_bar = {gear.x + gear.w, 0, (SCREEN_WIDTH / 2) - (UI_TILE_SIZE + (gear.w / 2)), UI_TILE_SIZE};
     
     float offset2 = match->f2.percent_hp < 0.0f ? 0.0f : match->f2.percent_hp;
     p2_kebab_bar.w = (int32_t)((float)p2_kebab_bar.w * offset2);
@@ -441,40 +546,41 @@ static void draw_ui_overlay(const match_t *match, renderer_t *renderer)
     renderer_draw_texture(
         renderer, 
         LAYER_UI1, 
-        match->textures.ui, 
+        match->res.ui, 
         &KEBAB,
         &p2_kebab_bar,
         0.0, 
         SDL_FLIP_HORIZONTAL
     );
-    
-    // SDL_Rect stage_view = camera_get_view_rect(&match->camera, match->stage_size);
-    renderer_draw_texture(renderer, LAYER_BACKGROUND, match->textures.stage, &match->camera.view, NULL, 0.0, SDL_FLIP_NONE);
-    //tile_from_atlas(GEAR, 96, 96, 4);
-    //tile_from_atlas(BAR, 96, 96, 4);
 
+    // --- BAR -----
+    static char nih[8] = "";
+    snprintf(nih, sizeof(nih), "%02d", (int32_t)match->round_timer);
+    renderer_draw_text(renderer, LAYER_UI1, nih, (SCREEN_WIDTH / 2) - 15, 25, 15, 15, COLOR_WHITE);
+    
+    // Background
+    renderer_draw_texture(renderer, LAYER_BACKGROUND, match->res.stage.texture, &match->camera.view, NULL, 0.0, SDL_FLIP_NONE);
 }
 
-static void draw_dbg_boxes(renderer_t *r, fighter_t *f, SDL_Color c, SDL_Rect view)
+stage_t stage_load(renderer_t *renderer, asset_name_t stage_name)
 {
-    const frame_t *col_f = animation_get_frame(&f->animation);
+    assert(is_in_range(0, ASSET_COUNT, stage_name) && "Stage not found: OOB");
 
-    for_range_j(col_f->count_hurtboxs)
+    stage_t stage = {0};
+    if (asset_load(&global_assets[stage_name], renderer))
     {
-        SDL_Rect hurt = to_world_rect(f, col_f->hurtboxs[j]);
-        hurt = world_to_screen_rect(view, hurt);
-        renderer_draw_rect(r, LAYER_UI1, &hurt, COLOR_GREEN, false);
+        renderer_texture_size(renderer, global_assets[stage_name].handle.texture, &stage.w, &stage.h);
+        stage.texture = global_assets[stage_name].handle.texture;
+        stage.floor_level = stage.h - FLOOR_MARGINE;
     }
-    for_range_i(col_f->count_hitboxs)
-    {
-        SDL_Rect hit = to_world_rect(f, col_f->hitboxs[i]);
-        hit = world_to_screen_rect(view, hit);
-        renderer_draw_rect(r, LAYER_UI1, &hit, COLOR_RED, false);
-    }
-    //SDL_Point p1 = {(int32_t)f->pysics.position.x, (int32_t)f->pysics.position.y}, 
-    //          p2 = {(int32_t)(f->pysics.position.x + (f->pysics.velocity.x * 0.16f)),
-    //                (int32_t)(f->pysics.position.y + (f->pysics.velocity.y * 0.16f))};
-    //renderer_draw_line(r, LAYER_UI1, p1, p2, c);
+    
+    return stage;
+}
+
+void stage_unload(renderer_t *renderer, stage_t *stage)
+{
+    asset_unload(&global_assets[stage->texture], renderer);
+    *stage = (stage_t){0};
 }
 
 #endif // MATCH_IMPLEMENTATION

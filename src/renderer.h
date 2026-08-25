@@ -8,7 +8,7 @@
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 #include <stdint.h>
-
+#include "macros.h"
 
 // =============
 //  DECLARATION
@@ -18,7 +18,7 @@
 #define SCREEN_WIDTH  640
 #define SCREEN_HEIGHT 360
 
-#define MAX_RENDERER_CMDS 1024
+#define MAX_RENDERER_CMDS 256
 #define MAX_RENDERER_TEXTURES 256
 
 #define COLOR_RED   (SDL_Color){255,0,0,255}
@@ -42,19 +42,57 @@ typedef enum render_layer_t
 typedef int32_t texture_handle_t;
 #define INVALID_TEXTURE_HANDLE (-1)
 
+typedef struct frame_t
+{
+    // Frame tile rect from the atlas
+    SDL_Rect src;
+    vec2i_t offset;
+    
+    int32_t ticks; // Amount of ticks frame will last (1 tick ~0.016 sec)
+
+    // Collision
+    uint8_t  count_hitboxs, count_hurtboxs;
+    SDL_Rect hitboxs[1],    hurtboxs[1];
+} frame_t;
+
+typedef struct animation_def_t
+{
+    frame_t frames[10];
+    int32_t frame_count;
+    int32_t total_ticks;
+    bool loop;
+} animation_def_t;  
+
+typedef struct animation_t
+{
+    const animation_def_t *animations; // Pointer to array of anims
+    int32_t id;     // Index in animations array of current animation 
+    int32_t texture;
+    int32_t duration;
+    uint16_t timer;  // current tick animation is on
+    uint16_t frame; // current frame of animation is on
+} animation_t;
+
+typedef struct animated_object_t
+{
+    animation_t anim;
+    vec2f_t position;
+    bool facing_right;
+} animated_object_t;
+
 typedef enum renderer_command_id_t 
 {
     REND_CMD_TEXTURE = 0,
     REND_CMD_TEXTURE_MOD,
     REND_CMD_RECT,
     REND_CMD_LINE,
-    REND_CMD_TEXT
+    REND_CMD_TEXT,
 } renderer_command_id_t;
 
 // Tag union for all rendering comands
 typedef union renderer_command_t 
 {
-    uint32_t type; 
+    uint32_t type;
     struct 
     {
         uint32_t type;
@@ -101,31 +139,32 @@ typedef struct renderer_t
 {
     renderer_command_t commands[LAYER_COUNT][MAX_RENDERER_CMDS];
     SDL_Texture *textures[MAX_RENDERER_TEXTURES]; // Texture buffers (all textures)
-    
+
     uint32_t command_count[LAYER_COUNT];
     uint32_t texture_count;
     
     SDL_Renderer *sdl_renderer;
     SDL_Window *sdl_window;
+    SDL_Texture *sdl_screen; 
 
-    SDL_Texture *game_screen;
     texture_handle_t font_texture; // Special member 
 } renderer_t;
 
 bool init_renderer(renderer_t *renderer);
 void destroy_renderer(renderer_t *renderer); // Destroys the renderer with all textures
 
-void renderer_texture_size(renderer_t *renderer, texture_handle_t handle, int32_t *w, int32_t *h);
+void animation_init(animation_t *anim, texture_handle_t texture, animation_def_t *defs);
+void animation_update(animation_t *anim);
+void animation_change(animation_t *anim, int32_t next_anim, bool restart);
+int32_t animation_def_total_ticks(const animation_def_t *anim);
+const frame_t *animation_get_frame(const animation_t *anim);
+
 texture_handle_t renderer_load_texture(renderer_t *renderer, const char *filename);
-/** 
- * Loads the texture form array of bytes in to renderer
- * \warning size of the texture cant be larger then ~2GB 
-*/
 texture_handle_t renderer_load_texture_from_mem(renderer_t *renderer, const uint8_t *data, size_t size);
 bool renderer_unload_texture(renderer_t *renderer, texture_handle_t tex_handle);
+void renderer_texture_size(renderer_t *renderer, texture_handle_t handle, int32_t *w, int32_t *h);
 
 texture_handle_t renderer_load_surface(renderer_t *renderer, SDL_Surface *surf, bool srcfree);
-
 SDL_Texture *renderer_handle_to_texture(renderer_t *renderer, texture_handle_t handle);
 void renderer_start_drawing(renderer_t *renderer);
 void renderer_present(renderer_t *renderer);
@@ -178,16 +217,24 @@ void renderer_draw_text(
     SDL_Color color
 );
 
+void renderer_start_effect(
+    renderer_t *renderer,
+    render_layer_t layer,
+    texture_handle_t handle,  // Texture to be rendered
+    const struct animation_def_t *anim,
+    int32_t lifetime,
+    vec2f_t pos,
+    bool facing_right
+);
+
 struct fighter_t;
 struct projectile_t;
-struct animation_t;
 struct pysics_t;
 
-void renderer_draw_animation(renderer_t *renderer, struct animation_t *anim, struct pysics_t *pysics, SDL_Rect view, render_layer_t layer);
+void renderer_draw_animation(renderer_t *renderer, render_layer_t layer, const animated_object_t *anim_obj, SDL_Rect view);
 void renderer_draw_fighter(renderer_t *renderer, struct fighter_t *fighter, SDL_Rect view, int32_t floor);
-//void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter, SDL_Rect view, float floor)
+void renderer_draw_projectile(renderer_t *renderer, struct projectile_t *proj, SDL_Rect view, int32_t floor);
 
-// void renderer_draw_projectile(renderer_t *renderer, struct projectile_t *proj);
 // ================
 //  IMPLEMENTATION
 // ================
@@ -199,7 +246,7 @@ void renderer_draw_fighter(renderer_t *renderer, struct fighter_t *fighter, SDL_
 #include "macros.h"
 #include "fajter.h"
 
-#define WIN_FLAGS   (SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE /*| SDL_WINDOW_FULLSCREEN_DESKTOP*/)
+#define WIN_FLAGS (SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE /*| SDL_WINDOW_FULLSCREEN_DESKTOP*/)
 #define RENDERER_FLAGS (SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
 
 bool init_renderer(renderer_t *renderer)
@@ -223,7 +270,7 @@ bool init_renderer(renderer_t *renderer)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     SDL_SetRenderDrawBlendMode(renderer->sdl_renderer, SDL_BLENDMODE_BLEND);
 
-    renderer->game_screen = SDL_CreateTexture(
+    renderer->sdl_screen = SDL_CreateTexture(
         renderer->sdl_renderer, 
         SDL_PIXELFORMAT_RGBA8888,
         SDL_TEXTUREACCESS_TARGET,
@@ -231,7 +278,7 @@ bool init_renderer(renderer_t *renderer)
         SCREEN_HEIGHT
     );
     
-    SDL_SetTextureBlendMode(renderer->game_screen, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureBlendMode(renderer->sdl_screen, SDL_BLENDMODE_BLEND);
     
     if (!asset_load_all(renderer))
         return false;
@@ -251,10 +298,10 @@ void destroy_renderer(renderer_t *renderer)
         }
     }
 
-    SDL_DestroyTexture(renderer->game_screen);
+    SDL_DestroyTexture(renderer->sdl_screen);
     SDL_DestroyRenderer(renderer->sdl_renderer);
     renderer->font_texture = INVALID_TEXTURE_HANDLE;
-    renderer->game_screen = NULL;
+    renderer->sdl_screen = NULL;
     renderer->sdl_renderer = NULL;
     renderer->texture_count = 0;
 
@@ -370,12 +417,70 @@ bool renderer_unload_texture(renderer_t *renderer, texture_handle_t tex_handle)
     return true;
 }
 
+int32_t animation_def_total_ticks(const animation_def_t *anim)
+{
+    int32_t ticks = 0;
+    for_range_i((unsigned)anim->frame_count)
+        ticks += anim->frames[i].ticks;
+    return ticks;
+}
+
+void animation_init(animation_t *anim, texture_handle_t texture, animation_def_t *defs)
+{
+    *anim = (animation_t) {
+        .animations = defs,
+        .texture = texture,
+        .duration = animation_def_total_ticks(&defs[0])
+    };
+}
+
+void animation_update(animation_t *anim)
+{
+    anim->timer++;
+    
+    const animation_def_t *curr = &anim->animations[anim->id];
+    int32_t frame_timestamp = 0;
+    
+    for_range_i((unsigned)anim->frame + 1)
+        frame_timestamp += curr->frames[i].ticks;
+
+    if (anim->timer >= frame_timestamp)
+    {
+        anim->frame++;
+        
+        if (anim->frame >= curr->frame_count)
+        {    
+            anim->frame =
+                (curr->loop) ? 0 : (uint16_t)curr->frame_count - 1;
+            anim->timer =
+                (curr->loop) ? 0 : (uint16_t)animation_def_total_ticks(curr);
+        }
+    }
+}
+
+const frame_t *animation_get_frame(const animation_t *anim)
+{
+    return &anim->animations[anim->id].frames[anim->frame];
+}
+
+void animation_change(animation_t *anim, int32_t next_anim, bool restart)
+{
+    if (anim->id != next_anim) 
+    {
+        anim->id = next_anim;
+        anim->timer = TICKS(0);
+        
+        anim->frame = (restart) ? 0 : (uint16_t)anim->animations[anim->id].frame_count - 1;
+        anim->timer = (restart) ? TICKS(0) : (uint16_t)animation_def_total_ticks(&anim->animations[anim->id]) - 1;
+    }
+}
+
 void renderer_start_drawing(renderer_t *renderer)
 {
     for_range_i(LAYER_COUNT)
         renderer->command_count[i] = 0;
     
-    SDL_SetRenderTarget(renderer->sdl_renderer, renderer->game_screen);
+    SDL_SetRenderTarget(renderer->sdl_renderer, renderer->sdl_screen);
     SDL_RenderClear(renderer->sdl_renderer);
 }
 
@@ -529,7 +634,7 @@ void renderer_present(renderer_t *renderer)
 
     SDL_RenderCopy(
         renderer->sdl_renderer,
-        renderer->game_screen,
+        renderer->sdl_screen,
         NULL,
         NULL
     );
@@ -720,24 +825,30 @@ void renderer_draw_text(
     renderer->command_count[layer] += 1;
 }
 
-void renderer_draw_animation(renderer_t *renderer, animation_t *anim, pysics_t *pysics, SDL_Rect view, render_layer_t layer)
+void renderer_draw_animation(renderer_t *renderer, render_layer_t layer, const animated_object_t *anim_obj, SDL_Rect view)
 {
-    const frame_t *frame = animation_get_frame(anim);
+    const frame_t *frame = animation_get_frame(&anim_obj->anim);
 
-    SDL_Rect world = frame_rect_facing_position(frame, pysics);
+    pysics_t pysics = {
+        .position = anim_obj->position, 
+        .facing_right = anim_obj->facing_right
+    };
+
+    SDL_Rect world = frame_rect_facing_position(frame, &pysics);
     SDL_Rect dst   = world_to_screen_rect(view, world);
     
     renderer_draw_texture(
         renderer,
         layer,
-        anim->texture,
+        anim_obj->anim.texture,
         &frame->src,
         &dst, 
         0.0, 
-        pysics->facing_right ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE
+        pysics.facing_right ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE
     );
 }
 
+#define DBG_BOXES 0
 // ---- FIGHTER -------------------------------------------------------------------------
 void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter, SDL_Rect view, int32_t floor)
 {   
@@ -773,7 +884,77 @@ void renderer_draw_fighter(renderer_t *renderer, fighter_t *fighter, SDL_Rect vi
         fighter->pysics.facing_right ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE,
         (SDL_Color){0, 0, 0, 128}
     );
+    
+    // Debug collision rects 
+    if (DBG_BOXES) 
+    {
+        for_range_j(frame->count_hurtboxs)
+        {
+            SDL_Rect hurt = fighter_to_world_rect(fighter, frame->hurtboxs[j]);
+            hurt = world_to_screen_rect(view, hurt);
+            renderer_draw_rect(renderer, LAYER_UI1, &hurt, COLOR_GREEN, false);
+        }
+        for_range_i(frame->count_hitboxs)
+        {
+            SDL_Rect hit = fighter_to_world_rect(fighter, frame->hitboxs[i]);
+            hit = world_to_screen_rect(view, hit);
+            renderer_draw_rect(renderer, LAYER_UI1, &hit, COLOR_RED, false);
+        }
+    }
 }
+
+void renderer_draw_projectile(renderer_t *renderer, projectile_t *proj, SDL_Rect view, int32_t floor)
+{
+    const frame_t *frame = animation_get_frame(&proj->anim);
+
+    SDL_Rect world = frame_rect_facing_position(frame, &proj->pysics);
+    SDL_Rect dst   = world_to_screen_rect(view, world);
+
+    renderer_draw_texture(
+        renderer, 
+        LAYER_ENTITY,
+        proj->anim.texture, 
+        &frame->src,
+        &dst, 
+        0.0,
+        proj->pysics.facing_right ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL
+    );
+    
+    // Shadow rendering
+    SDL_Rect shadow = world;
+    shadow.y = (int32_t)floor - 8;
+    shadow.h -= SDL_clamp((floor - (int32_t)proj->pysics.position.y), 0, 40); 
+    shadow = world_to_screen_rect(view, shadow);
+
+    renderer_draw_texture_mod(
+        renderer,
+        LAYER_ENTITY,
+        proj->anim.texture, 
+        &frame->src,
+        &shadow, 
+        180.0, 
+        proj->pysics.facing_right ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE,
+        (SDL_Color){0, 0, 0, 128}
+    );
+    
+    // Debug collision rects 
+    if (DBG_BOXES) 
+    {
+        for_range_j(frame->count_hurtboxs)
+        {
+            SDL_Rect hurt = to_world_rect(&proj->pysics, frame, frame->hurtboxs[j]);
+            hurt = world_to_screen_rect(view, hurt);
+            renderer_draw_rect(renderer, LAYER_UI1, &hurt, COLOR_GREEN, false);
+        }
+        for_range_i(frame->count_hitboxs)
+        {
+            SDL_Rect hit = to_world_rect(&proj->pysics, frame, frame->hitboxs[i]);
+            hit = world_to_screen_rect(view, hit);
+            renderer_draw_rect(renderer, LAYER_UI1, &hit, COLOR_RED, false);
+        }
+    }
+}
+
 
 #endif /* RENDERER_IMPLEMENTATION */
 

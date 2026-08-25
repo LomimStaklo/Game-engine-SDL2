@@ -15,11 +15,11 @@ typedef struct camera_t
     float   shake_strength;
 } camera_t;
 
-#define CAMERA_MIN_ZOOM   1.0f
-#define CAMERA_MAX_ZOOM   1.3f
+#define CAMERA_MIN_ZOOM 1.4f
+#define CAMERA_MAX_ZOOM 1.9f
 #define CAMERA_ZOOM_DIST_NEAR  150.0f  // distance at which zoom = MAX
 #define CAMERA_ZOOM_DIST_FAR   360.0f  // distance at which zoom = MIN
-#define CAMERA_LERP_SPEED 5.0f         // higher = snappier follow
+#define CAMERA_LERP_SPEED 7.0f         // higher = snappier follow
 
 void camera_shake_trigger(camera_t *cam, float strength, float duration);
 void camera_update(camera_t *cam, struct pysics_t *p1, struct pysics_t *p2, vec2i_t map_size, float delta_time);
@@ -67,8 +67,8 @@ void camera_update(camera_t *cam, pysics_t *p1, pysics_t *p2, vec2i_t map_size, 
     {
         cam->shake_time -= delta_time;
         float falloff = cam->shake_time > 0.0f ? cam->shake_time : 0.0f;
-        cam->shake_offset.x = ((float)rand()/RAND_MAX * 2.0f - 1.0f) * cam->shake_strength * falloff;
-        cam->shake_offset.y = ((float)rand()/RAND_MAX * 2.0f - 1.0f) * cam->shake_strength * falloff;
+        cam->shake_offset.x = ((float)rand()/(float)RAND_MAX * 2.0f - 1.0f) * cam->shake_strength * falloff;
+        cam->shake_offset.y = ((float)rand()/(float)RAND_MAX * 2.0f - 1.0f) * cam->shake_strength * falloff;
     }
     else
         cam->shake_offset = vec2f(0.0f, 0.0f);

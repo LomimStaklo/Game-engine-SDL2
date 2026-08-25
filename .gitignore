@@ -1,8 +1,8 @@
 .vscode/
+.ignore/
 *.exe.old
 *.exe
 index.*
-.ignore/
 
 assets/audio/
 assets/images/*
@@ -22,4 +22,3 @@ icon/icon.ico
 
 !assets/images/ui_bar.png
 !assets/images/ui_font.png
-!assets/images/ui_icon.png

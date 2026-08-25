@@ -46,7 +46,7 @@ void machine_render(machine_t *machine, struct renderer_t *renderer);
 #include "player.h"
 #include "characters.h" 
 
-static void machine_perform_switch(machine_t *machine)
+internal void machine_perform_switch(machine_t *machine)
 {
     if (machine->curr_state != machine->next_state)
     {
@@ -55,12 +55,12 @@ static void machine_perform_switch(machine_t *machine)
     }
 }
 
-static void machine_queue_state(machine_t *machine, machine_state_t next)
+internal void machine_queue_state(machine_t *machine, machine_state_t next)
 {
     machine->next_state = next; 
 }
 
-static void machine_begin_transition(machine_t *machine, float duration)
+internal void machine_begin_transition(machine_t *machine, float duration)
 {
     machine->transitioning = true;
     machine->transition_timer = 0.0f;
@@ -78,7 +78,7 @@ void machine_init(machine_t *machine, renderer_t *renderer, player_t *p1, player
     match_resurces_t texs = 
     {
         .ui    = asset_get_texture(ASSET_UI_GAME_BAR),
-        .stage = asset_get_texture(ASSET_STAGE_SSFSB)
+        .stage = stage_load(renderer, ASSET_STAGE_SSFSB),
     }; 
 
     machine->match = match_start(renderer, 90.0f, 3, p1, p2, &texs);

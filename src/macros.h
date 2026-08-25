@@ -12,23 +12,26 @@
 #define for_range_j(count) for (uint32_t j = 0; j < (count); j++)
 #define str_bool(expr) (expr) ? "true" : "false"  
 
+#define global_variable static
+#define internal static
+
 // Vector implementation
 
 typedef struct vec2i_t { int32_t x, y; } vec2i_t;
 typedef struct vec2f_t { float x, y; }   vec2f_t;
 
-static inline vec2i_t vec2i(int32_t x, int32_t y) { return (vec2i_t){x, y}; }
-static inline vec2f_t vec2f(float x, float y)     { return (vec2f_t){x, y}; }
+internal inline vec2i_t vec2i(int32_t x, int32_t y) { return (vec2i_t){x, y}; }
+internal inline vec2f_t vec2f(float x, float y)     { return (vec2f_t){x, y}; }
 
-static inline vec2i_t vec2i_add(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x + vec2.x, vec1.y + vec2.y }; }
-static inline vec2i_t vec2i_sub(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x - vec2.x, vec1.y - vec2.y }; }
-static inline vec2i_t vec2i_mul(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x * vec2.x, vec1.y * vec2.y }; }
-static inline vec2i_t vec2i_div(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x / vec2.x, vec1.y / vec2.y }; }
+internal inline vec2i_t vec2i_add(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x + vec2.x, vec1.y + vec2.y }; }
+internal inline vec2i_t vec2i_sub(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x - vec2.x, vec1.y - vec2.y }; }
+internal inline vec2i_t vec2i_mul(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x * vec2.x, vec1.y * vec2.y }; }
+internal inline vec2i_t vec2i_div(vec2i_t vec1, vec2i_t vec2) { return (vec2i_t){ vec1.x / vec2.x, vec1.y / vec2.y }; }
 
-static inline vec2f_t vec2f_add(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x + vec2.x, vec1.y + vec2.y }; }
-static inline vec2f_t vec2f_sub(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x - vec2.x, vec1.y - vec2.y }; }
-static inline vec2f_t vec2f_mul(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x * vec2.x, vec1.y * vec2.y }; }
-static inline vec2f_t vec2f_div(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x / vec2.x, vec1.y / vec2.y }; }
+internal inline vec2f_t vec2f_add(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x + vec2.x, vec1.y + vec2.y }; }
+internal inline vec2f_t vec2f_sub(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x - vec2.x, vec1.y - vec2.y }; }
+internal inline vec2f_t vec2f_mul(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x * vec2.x, vec1.y * vec2.y }; }
+internal inline vec2f_t vec2f_div(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ vec1.x / vec2.x, vec1.y / vec2.y }; }
 
 /** 
  * Compile time assert
@@ -47,12 +50,12 @@ static inline vec2f_t vec2f_div(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ 
  * \returns Rectangle (SDL_Rect) of the tile in a atlas 
  */  
 #define tile_from_atlas(idx, tile_w, tile_h, atlas_columns) \
-    {                                                       \
-        ((idx) % (atlas_columns)) * (tile_w),               \
-        ((idx) / (atlas_columns)) * (tile_h),               \
-        (tile_w),                                           \
-        (tile_h)                                            \
-    }
+{                                                           \
+    ((idx) % (atlas_columns)) * (tile_w),                   \
+    ((idx) / (atlas_columns)) * (tile_h),                   \
+    (tile_w),                                               \
+    (tile_h)                                                \
+}
 
 /** 
  * Index based atlas access with custom origin point 
@@ -65,11 +68,34 @@ static inline vec2f_t vec2f_div(vec2f_t vec1, vec2f_t vec2) { return (vec2f_t){ 
  * \returns Rectangle (SDL_Rect) of the tile in a atlas 
  */
 #define tile_from_atlas_xy(idx, origin_x, origin_y, tile_w, tile_h, atlas_columns) \
-    {                                                                              \
-        (origin_x) + (((idx) % (atlas_columns)) * (tile_w)),                       \
-        (origin_y) + (((idx) / (atlas_columns)) * (tile_h)),                       \
-        (tile_w),                                                                  \
-        (tile_h)                                                                   \
-    }
+{                                                                                  \
+    (origin_x) + (((idx) % (atlas_columns)) * (tile_w)),                           \
+    (origin_y) + (((idx) / (atlas_columns)) * (tile_h)),                           \
+    (tile_w),                                                                      \
+    (tile_h)                                                                       \
+}
+
+// ---- STACK ----------------------
+#define stack_push(stk, ...) \
+do { \
+    (stk)->items[((stk)->count + 1U) > lenghtof((stk)->items) ? (stk)->count : (stk)->count++] = __VA_ARGS__; \
+} while (0)
+
+#define stack_pop(stk)      (stk)->items[(stk)->count <= 0 ? 0 : --(stk)->count]
+#define stack_peek(stk)     (stk)->items[(stk)->count <= 0 ? 0 : (stk)->count - 1]
+#define stack_is_empty(stk) ((stk)->count <= 0)
+#define stack_is_full(stk)  ((stk)->count >= lenghtof((stk)->items))
+
+#define stack_pop_at(stk, index)                        \
+do {                                                    \
+    for (uint32_t i = (index); i < (stk)->count; i++) { \
+        (stk)->items[i] = (stk)->items[i + 1];          \
+    }                                                   \
+} while(0) 
+
+#define stack_pop_unordered_at(stk, index)              \
+do {                                                    \
+    (stk)->items[index] = (stk)->items[--((stk)->count)]; \
+} while(0)
 
 #endif /* !_MACROS_H */
